@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo/cli": "^55.0.16",
@@ -14,6 +15,8 @@
     "@expo/vector-icons": "^15.1.1",
     "babel-preset-expo": "~55.0.8",
     "expo": "~55.0.6",
+    "expo-constants": "~55.0.7",
+    "expo-font": "~55.0.4",
     "expo-image": "^55.0.6",
     "expo-image-picker": "^16.0.6",
     "expo-linear-gradient": "~55.0.8",

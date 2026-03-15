@@ -46,8 +46,12 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-font"
     ],
+    "install": {
+      "exclude": ["expo-image-picker", "react-native-reanimated"]
+    },
     "extra": {
       "router": {},
       "eas": {
