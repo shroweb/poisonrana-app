@@ -478,8 +478,8 @@ export default function EventDetailScreen() {
                   const teamList = Object.values(teams);
                   const hasResults = match.participants.some((p) => p.isWinner);
                   const chosen = predictions[match.id];
-                  // Match by any participant in the team, not just the first
-                  const chosenTeam = teamList.find((t) => t.some((p) => p.id === chosen));
+                  // predictedWinnerId is wrestler.id, match against that
+                  const chosenTeam = teamList.find((t) => t.some((p) => p.wrestler.id === chosen));
                   const chosenWon = chosenTeam ? chosenTeam.some((p) => p.isWinner) : null;
                   return (
                     <View key={match.id} className="bg-surface border border-border rounded-xl p-4 mb-3">
@@ -550,9 +550,10 @@ export default function EventDetailScreen() {
                       <Text className="text-muted text-[10px] uppercase tracking-wider mb-2 font-semibold">Pick your winner</Text>
                       <View className="gap-2">
                         {teamList.map((team, i) => {
-                          const participantId = team[0].id;
-                          // Match by any participant in the team
-                          const isChosen = team.some((p) => p.id === chosen);
+                          // Send wrestler.id — that's what the server stores as predictedWinnerId
+                          const participantId = team[0].wrestler.id;
+                          // Match by wrestler.id
+                          const isChosen = team.some((p) => p.wrestler.id === chosen);
                           const isLoading = submittingPrediction === match.id;
                           return (
                             <TouchableOpacity

@@ -42,8 +42,9 @@ function PredictionMatchCard({
   const teams = Object.values(teamMap);
 
   // Determine result — find the predicted participant's team, check if any member of that team won
+  // predictedWinnerId is wrestler.id
   const predictedParticipant = prediction
-    ? match.participants.find((p) => p.id === prediction)
+    ? match.participants.find((p) => p.wrestler.id === prediction)
     : null;
   const predictedCorrectly =
     hasResults &&
@@ -101,7 +102,7 @@ function PredictionMatchCard({
           teams.map((team, i) => {
             const teamWon = hasResults && team.some((p) => p.isWinner);
             const teamLost = hasResults && !teamWon;
-            const isPredicted = prediction && team.some((p) => p.id === prediction);
+            const isPredicted = prediction && team.some((p) => p.wrestler.id === prediction);
             return (
               <View key={i}>
                 <View className="flex-row flex-wrap gap-1 items-center">
@@ -202,8 +203,8 @@ export default function PredictionResultsScreen() {
   const correct = myPredictions.filter((p) => {
     const match = matches.find((m) => m.id === p.matchId);
     if (!match) return false;
-    // Find the team of the predicted participant, then check if any member of that team won
-    const predicted = match.participants.find((part) => part.id === p.predictedWinnerId);
+    // predictedWinnerId is wrestler.id — find participant by wrestler.id
+    const predicted = match.participants.find((part) => part.wrestler.id === p.predictedWinnerId);
     if (!predicted) return false;
     return match.participants.some(
       (part) => part.team === predicted.team && part.isWinner
