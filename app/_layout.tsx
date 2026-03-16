@@ -45,6 +45,10 @@ export default function RootLayout() {
           name="privacy"
           options={{ title: "Privacy Policy" }}
         />
+        <Stack.Screen
+          name="predictions/[slug]"
+          options={{ title: "My Predictions", headerBackTitle: "Back" }}
+        />
       </Stack>
     </>
   );

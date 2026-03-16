@@ -69,11 +69,11 @@ export default function PredictionsScreen() {
   const upcomingEvents = events.filter((e) => new Date(e.date) >= today);
   const pastEvents = events.filter((e) => new Date(e.date) < today);
 
-  function EventCard({ event, badge }: { event: Event; badge: string }) {
+  function EventCard({ event, badge, href }: { event: Event; badge: string; href?: string }) {
     return (
       <TouchableOpacity
         key={event.id}
-        onPress={() => router.push(`/events/${event.slug}`)}
+        onPress={() => router.push((href ?? `/events/${event.slug}`) as any)}
         className="bg-surface border border-border rounded-xl overflow-hidden mb-3 flex-row"
       >
         {event.posterUrl ? (
@@ -168,7 +168,12 @@ export default function PredictionsScreen() {
                   Recent Results
                 </Text>
                 {pastEvents.map((event) => (
-                  <EventCard key={event.id} event={event} badge="View Results" />
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    badge="My Predictions"
+                    href={`/predictions/${event.slug}`}
+                  />
                 ))}
               </>
             )}
