@@ -50,7 +50,7 @@
       "expo-font"
     ],
     "install": {
-      "exclude": ["expo-image-picker", "react-native-reanimated"]
+      "exclude": ["react-native-reanimated"]
     },
     "extra": {
       "router": {},
