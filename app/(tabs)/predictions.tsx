@@ -36,17 +36,30 @@ export default function PredictionsScreen() {
 
   async function fetchEvents() {
     const res = await api.get<ApiResponse<Event[]>>("/events", {
-      limit: 100,
+      limit: 200,
       sort: "date_desc",
     });
     const all = res.data ?? [];
-    // Keep all events with predictions enabled (upcoming + recent past)
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 60); // show up to 60 days back
-    const relevant = all.filter(
-      (e) => new Date(e.date) >= cutoff && e.enablePredictions
+    const today = new Date(new Date().toDateString());
+
+    const upcoming = all.filter(
+      (e) => new Date(e.date) >= today && e.enablePredictions
     );
-    setEvents(relevant);
+
+    // For past events, only show ones the user has actually predicted on
+    let predictedSlugs = new Set<string>();
+    if (token) {
+      const pRes = await api.get<ApiResponse<{ eventId: string; slug: string }[]>>(
+        "/predictions/me"
+      ).catch(() => ({ data: [] as { eventId: string; slug: string }[] }));
+      predictedSlugs = new Set((pRes.data ?? []).map((e) => e.slug));
+    }
+
+    const past = all.filter(
+      (e) => new Date(e.date) < today && predictedSlugs.has(e.slug)
+    );
+
+    setEvents([...upcoming, ...past]);
   }
 
   useEffect(() => {
