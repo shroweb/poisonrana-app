@@ -8,7 +8,6 @@ import {
   RefreshControl,
 } from "react-native";
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Event, ApiResponse } from "@/lib/types";
@@ -16,13 +15,26 @@ import EventCard from "@/components/EventCard";
 
 const PROMOTIONS = ["All", "WWE", "AEW", "NJPW", "TNA", "ROH"];
 
+function SkeletonCard() {
+  return (
+    <View style={{ width: "48%" }} className="bg-surface border border-border rounded-xl overflow-hidden mb-4">
+      <View style={{ height: 130 }} className="bg-subtle" />
+      <View className="p-2">
+        <View className="h-2 bg-subtle rounded w-1/2 mb-2" />
+        <View className="h-3 bg-subtle rounded w-full mb-1.5" />
+        <View className="h-3 bg-subtle rounded w-4/5" />
+      </View>
+    </View>
+  );
+}
+
 export default function EventsScreen() {
-  const router = useRouter();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [promotion, setPromotion] = useState("All");
+  const [view, setView] = useState<"upcoming" | "past">("upcoming");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -33,6 +45,8 @@ export default function EventsScreen() {
       const params: Record<string, string | number> = {
         page: currentPage,
         limit: 20,
+        upcoming: view === "upcoming" ? "true" : "false",
+        sort: view === "upcoming" ? "date_asc" : "date_desc",
       };
       if (search) params.q = search;
       if (promotion !== "All") params.promotion = promotion;
@@ -51,14 +65,14 @@ export default function EventsScreen() {
     setLoading(true);
     setPage(1);
     fetchEvents(true).finally(() => setLoading(false));
-  }, [search, promotion]);
+  }, [search, promotion, view]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     setPage(1);
     await fetchEvents(true);
     setRefreshing(false);
-  }, [search, promotion]);
+  }, [search, promotion, view]);
 
   async function loadMore() {
     if (loadingMore || events.length >= total) return;
@@ -70,7 +84,22 @@ export default function EventsScreen() {
   return (
     <View className="flex-1 bg-background">
       {/* Header */}
-      <View className="px-4 pt-4 pb-4 bg-background">
+      <View className="px-4 pt-4 pb-2 bg-background">
+        {/* Upcoming / Past toggle */}
+        <View className="flex-row bg-surface border border-border rounded-xl p-1 mb-3">
+          {(["upcoming", "past"] as const).map((v) => (
+            <TouchableOpacity
+              key={v}
+              onPress={() => { setView(v); setPage(1); }}
+              className={`flex-1 py-2 rounded-lg items-center ${view === v ? "bg-yellow" : ""}`}
+            >
+              <Text className={`text-xs font-bold uppercase tracking-wide ${view === v ? "text-black" : "text-muted"}`}>
+                {v === "upcoming" ? "Upcoming" : "Past Events"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {/* Search */}
         <View className="bg-surface border border-border rounded-xl px-4 py-3 flex-row items-center mb-3">
           <Ionicons name="search-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
@@ -79,10 +108,7 @@ export default function EventsScreen() {
             placeholderTextColor="#6B7280"
             className="flex-1 text-white text-sm"
             value={search}
-            onChangeText={(t) => {
-              setSearch(t);
-              setPage(1);
-            }}
+            onChangeText={(t) => { setSearch(t); setPage(1); }}
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch("")}>
@@ -97,23 +123,15 @@ export default function EventsScreen() {
           horizontal
           showsHorizontalScrollIndicator={false}
           keyExtractor={(item) => item}
+          style={{ marginBottom: 8 }}
           renderItem={({ item }) => (
             <TouchableOpacity
-              onPress={() => {
-                setPromotion(item);
-                setPage(1);
-              }}
+              onPress={() => { setPromotion(item); setPage(1); }}
               className={`mr-2 px-4 py-1.5 rounded-full border ${
-                promotion === item
-                  ? "bg-yellow border-yellow"
-                  : "bg-transparent border-border"
+                promotion === item ? "bg-yellow border-yellow" : "bg-transparent border-border"
               }`}
             >
-              <Text
-                className={`text-xs font-bold ${
-                  promotion === item ? "text-black" : "text-muted"
-                }`}
-              >
+              <Text className={`text-xs font-bold ${promotion === item ? "text-black" : "text-muted"}`}>
                 {item}
               </Text>
             </TouchableOpacity>
@@ -123,8 +141,8 @@ export default function EventsScreen() {
 
       {/* List */}
       {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#F5C518" size="large" />
+        <View className="flex-row flex-wrap px-4 justify-between pt-2">
+          {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
         </View>
       ) : (
         <FlatList
@@ -135,11 +153,7 @@ export default function EventsScreen() {
           columnWrapperClassName="justify-between"
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#F5C518"
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F5C518" />
           }
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
@@ -150,9 +164,7 @@ export default function EventsScreen() {
             </View>
           }
           ListFooterComponent={
-            loadingMore ? (
-              <ActivityIndicator color="#F5C518" className="my-4" />
-            ) : null
+            loadingMore ? <ActivityIndicator color="#F5C518" className="my-4" /> : null
           }
         />
       )}
