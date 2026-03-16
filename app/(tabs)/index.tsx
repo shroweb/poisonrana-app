@@ -34,7 +34,7 @@ export default function EventsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [promotion, setPromotion] = useState("All");
-  const [view, setView] = useState<"upcoming" | "past">("upcoming");
+  const [view, setView] = useState<"upcoming" | "past">("past");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -87,14 +87,14 @@ export default function EventsScreen() {
       <View className="px-4 pt-4 pb-2 bg-background">
         {/* Upcoming / Past toggle */}
         <View className="flex-row bg-surface border border-border rounded-xl p-1 mb-3">
-          {(["upcoming", "past"] as const).map((v) => (
+          {(["past", "upcoming"] as const).map((v) => (
             <TouchableOpacity
               key={v}
               onPress={() => { setView(v); setPage(1); }}
               className={`flex-1 py-2 rounded-lg items-center ${view === v ? "bg-yellow" : ""}`}
             >
               <Text className={`text-xs font-bold uppercase tracking-wide ${view === v ? "text-black" : "text-muted"}`}>
-                {v === "upcoming" ? "Upcoming" : "Past Events"}
+                {v === "past" ? "Past Events" : "Upcoming"}
               </Text>
             </TouchableOpacity>
           ))}
