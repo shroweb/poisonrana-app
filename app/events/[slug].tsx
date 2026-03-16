@@ -137,6 +137,7 @@ export default function EventDetailScreen() {
   const [activeTab, setActiveTab] = useState<"card" | "reviews" | "predictions">("card");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [following, setFollowing] = useState<Set<string>>(new Set());
 
   // Review modal
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
@@ -609,12 +610,51 @@ export default function EventDetailScreen() {
                     className="bg-surface border border-border rounded-xl p-4 mb-3"
                   >
                     <View className="flex-row items-center justify-between mb-2">
-                      <Text className="text-white font-bold text-sm">
-                        {review.user.name}
-                      </Text>
-                      <Text className="text-yellow text-sm font-bold">
-                        ★ {review.rating.toFixed(1)}
-                      </Text>
+                      <View className="flex-row items-center flex-1 mr-2">
+                        {review.user.avatarUrl ? (
+                          <Image
+                            source={{ uri: review.user.avatarUrl }}
+                            style={{ width: 28, height: 28, borderRadius: 14 }}
+                            contentFit="cover"
+                          />
+                        ) : (
+                          <View className="w-7 h-7 rounded-full bg-yellow items-center justify-center">
+                            <Text className="text-black text-[10px] font-black">
+                              {(review.user.name ?? "?")[0].toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                        <Text className="text-white font-bold text-sm ml-2 flex-1" numberOfLines={1}>
+                          {review.user.name}
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center gap-2">
+                        {token && user && review.user.id !== user.id && (
+                          <TouchableOpacity
+                            onPress={async () => {
+                              const res = await api.post<ApiResponse<{ followed: boolean }>>(
+                                "/follow",
+                                { targetUserId: review.user.id }
+                              ).catch(() => null);
+                              if (res?.data) {
+                                setFollowing((prev) => {
+                                  const next = new Set(prev);
+                                  res.data.followed ? next.add(review.user.id) : next.delete(review.user.id);
+                                  return next;
+                                });
+                              }
+                            }}
+                            className={`px-2 py-0.5 rounded-md border ${following.has(review.user.id) ? "border-yellow bg-yellow/10" : "border-border"}`}
+                          >
+                            <Text className={`text-[10px] font-bold ${following.has(review.user.id) ? "text-yellow" : "text-muted"}`}>
+                              {following.has(review.user.id) ? "Following" : "Follow"}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                        <Text className="text-yellow text-sm font-bold">
+                          ★ {review.rating.toFixed(1)}
+                        </Text>
+                      </View>
                     </View>
                     {review.comment && (
                       <Text className="text-muted text-sm leading-relaxed">

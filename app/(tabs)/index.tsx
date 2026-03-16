@@ -13,8 +13,6 @@ import { api } from "@/lib/api";
 import { Event, ApiResponse } from "@/lib/types";
 import EventCard from "@/components/EventCard";
 
-const PROMOTIONS = ["All", "WWE", "AEW", "NJPW", "TNA", "ROH"];
-
 function SkeletonCard() {
   return (
     <View style={{ width: "48%" }} className="bg-surface border border-border rounded-xl overflow-hidden mb-4">
@@ -34,6 +32,16 @@ export default function EventsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [promotion, setPromotion] = useState("All");
+  const [promotions, setPromotions] = useState<string[]>(["All"]);
+
+  useEffect(() => {
+    api.get<ApiResponse<{ shortName: string }[]>>("/promotions")
+      .then((res) => {
+        const names = (res.data ?? []).map((p) => p.shortName);
+        setPromotions(["All", ...names]);
+      })
+      .catch(() => {});
+  }, []);
   const [view, setView] = useState<"upcoming" | "past">("past");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -119,7 +127,7 @@ export default function EventsScreen() {
 
         {/* Promotion filter */}
         <FlatList
-          data={PROMOTIONS}
+          data={promotions}
           horizontal
           showsHorizontalScrollIndicator={false}
           keyExtractor={(item) => item}
