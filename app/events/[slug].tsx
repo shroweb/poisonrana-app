@@ -498,37 +498,38 @@ export default function EventDetailScreen() {
                       </View>
 
                       {hasResults && (
-                        <>
-                          <Text className="text-muted text-[10px] uppercase tracking-wider font-semibold mb-1.5">Result</Text>
-                          <View className="flex-row flex-wrap gap-1 mb-3">
-                            {match.participants.filter((p) => p.isWinner).map((p) => (
-                              <View key={p.id} className="flex-row items-center bg-yellow/10 border border-yellow/30 rounded-md px-2 py-0.5">
-                                <Text className="text-yellow text-[11px] font-semibold mr-1">🏆</Text>
-                                <Text className="text-yellow text-[11px] font-semibold">{p.wrestler.name}</Text>
+                        <View className="flex-row flex-wrap gap-1 mt-1">
+                          {match.participants.filter((p) => p.isWinner).map((p) => {
+                            const wasMyPick = chosenTeam?.some((cp) => cp.id === p.id);
+                            const color = !chosen
+                              ? "yellow"
+                              : chosenWon
+                              ? "green"
+                              : "red";
+                            return (
+                              <View
+                                key={p.id}
+                                className={`flex-row items-center rounded-md px-2 py-0.5 border ${
+                                  color === "green"
+                                    ? "bg-green-500/10 border-green-500/30"
+                                    : color === "red"
+                                    ? "bg-red-500/10 border-red-500/30"
+                                    : "bg-yellow/10 border-yellow/30"
+                                }`}
+                              >
+                                <Text className={`text-[11px] font-semibold ${
+                                  color === "green" ? "text-green-400" : color === "red" ? "text-red-400" : "text-yellow"
+                                }`}>
+                                  {p.wrestler.name}
+                                </Text>
                               </View>
-                            ))}
-                          </View>
-                        </>
+                            );
+                          })}
+                        </View>
                       )}
 
-                      {chosen && (
-                        <>
-                          <Text className="text-muted text-[10px] uppercase tracking-wider font-semibold mb-1.5">Your pick</Text>
-                          <View className="flex-row flex-wrap gap-1">
-                            {(chosenTeam ?? []).map((p) => (
-                              <View key={p.id} className={`rounded-md px-2 py-0.5 border ${chosenWon ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30"}`}>
-                                <Text className={`text-[11px] font-semibold ${chosenWon ? "text-green-400" : "text-red-400"}`}>{p.wrestler.name}</Text>
-                              </View>
-                            ))}
-                          </View>
-                        </>
-                      )}
-
-                      {!chosen && !token && (
-                        <Text className="text-muted text-xs italic">Sign in to see your pick</Text>
-                      )}
-                      {!chosen && token && (
-                        <Text className="text-muted text-xs italic">No prediction made</Text>
+                      {!chosen && token && !hasResults && (
+                        <Text className="text-muted text-xs italic mt-1">No prediction made</Text>
                       )}
                     </View>
                   );

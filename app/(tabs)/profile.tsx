@@ -67,18 +67,21 @@ export default function ProfileScreen() {
   const { token, user, logout } = useAuth();
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [reviews, setReviews] = useState<MyReview[]>([]);
+  const [rank, setRank] = useState<{ rank: number | null; total: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"watchlist" | "reviews">("watchlist");
 
   async function fetchData() {
     if (!token) return;
-    const [wl, rv] = await Promise.allSettled([
+    const [wl, rv, rk] = await Promise.allSettled([
       api.get<ApiResponse<WatchlistItem[]>>("/me/watchlist"),
       api.get<ApiResponse<MyReview[]>>("/me/reviews"),
+      api.get<ApiResponse<{ rank: number | null; total: number }>>("/me/rank"),
     ]);
     if (wl.status === "fulfilled") setWatchlist(wl.value.data ?? []);
     if (rv.status === "fulfilled") setReviews(rv.value.data ?? []);
+    if (rk.status === "fulfilled") setRank(rk.value.data ?? null);
   }
 
   useEffect(() => {
@@ -164,6 +167,15 @@ export default function ProfileScreen() {
         {user.favoritePromotion && (
           <View className="mt-2 bg-yellow/10 border border-yellow/30 rounded-md px-3 py-1">
             <Text className="text-yellow text-xs font-bold">{user.favoritePromotion}</Text>
+          </View>
+        )}
+        {rank?.rank != null && (
+          <View className="mt-2 bg-surface border border-border rounded-md px-3 py-1">
+            <Text className="text-muted text-xs">
+              Prediction rank{" "}
+              <Text className="text-white font-bold">#{rank.rank}</Text>
+              <Text className="text-muted"> / {rank.total}</Text>
+            </Text>
           </View>
         )}
       </View>
