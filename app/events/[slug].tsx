@@ -478,7 +478,8 @@ export default function EventDetailScreen() {
                   const teamList = Object.values(teams);
                   const hasResults = match.participants.some((p) => p.isWinner);
                   const chosen = predictions[match.id];
-                  const chosenTeam = teamList.find((t) => t[0].id === chosen);
+                  // Match by any participant in the team, not just the first
+                  const chosenTeam = teamList.find((t) => t.some((p) => p.id === chosen));
                   const chosenWon = chosenTeam ? chosenTeam.some((p) => p.isWinner) : null;
                   return (
                     <View key={match.id} className="bg-surface border border-border rounded-xl p-4 mb-3">
@@ -549,7 +550,8 @@ export default function EventDetailScreen() {
                       <View className="gap-2">
                         {teamList.map((team, i) => {
                           const participantId = team[0].id;
-                          const isChosen = chosen === participantId;
+                          // Match by any participant in the team
+                          const isChosen = team.some((p) => p.id === chosen);
                           const isLoading = submittingPrediction === match.id;
                           return (
                             <TouchableOpacity
