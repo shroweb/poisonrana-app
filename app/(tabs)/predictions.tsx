@@ -30,18 +30,18 @@ export default function PredictionsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   async function fetchEvents() {
-    // Fetch recent + upcoming events (date_desc puts newest/upcoming first)
     const res = await api.get<ApiResponse<Event[]>>("/events", {
       limit: 100,
       sort: "date_desc",
     });
     const all = res.data ?? [];
-    const today = new Date(new Date().toDateString()); // midnight local
-    // Keep events that haven't ended yet (date >= today) with predictions enabled
-    const upcoming = all.filter(
-      (e) => new Date(e.date) >= today && e.enablePredictions
+    // Keep all events with predictions enabled (upcoming + recent past)
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 60); // show up to 60 days back
+    const relevant = all.filter(
+      (e) => new Date(e.date) >= cutoff && e.enablePredictions
     );
-    setEvents(upcoming);
+    setEvents(relevant);
   }
 
   useEffect(() => {
@@ -59,6 +59,49 @@ export default function PredictionsScreen() {
     user && (user as any).predictionCount > 0
       ? Math.round(((user as any).predictionScore / (user as any).predictionCount) * 100)
       : null;
+
+  const today = new Date(new Date().toDateString());
+  const upcomingEvents = events.filter((e) => new Date(e.date) >= today);
+  const pastEvents = events.filter((e) => new Date(e.date) < today);
+
+  function EventCard({ event, badge }: { event: Event; badge: string }) {
+    return (
+      <TouchableOpacity
+        key={event.id}
+        onPress={() => router.push(`/events/${event.slug}`)}
+        className="bg-surface border border-border rounded-xl overflow-hidden mb-3 flex-row"
+      >
+        {event.posterUrl ? (
+          <Image
+            source={{ uri: event.posterUrl }}
+            style={{ width: 80, height: 80 }}
+            contentFit="cover"
+          />
+        ) : (
+          <View style={{ width: 80, height: 80 }} className="bg-subtle items-center justify-center">
+            <Text className="text-muted text-xs">No img</Text>
+          </View>
+        )}
+        <View className="flex-1 p-3 justify-center">
+          <View className="flex-row items-center mb-1">
+            <View className="bg-cyan/20 border border-cyan/30 rounded px-1.5 py-0.5 mr-2">
+              <Text className="text-cyan text-[9px] font-bold uppercase">{event.promotion}</Text>
+            </View>
+            <View className="bg-yellow/10 border border-yellow/30 rounded px-1.5 py-0.5">
+              <Text className="text-yellow text-[9px] font-bold uppercase">{badge}</Text>
+            </View>
+          </View>
+          <Text className="text-white font-bold text-sm leading-tight mb-1" numberOfLines={2}>
+            {event.title}
+          </Text>
+          <Text className="text-muted text-xs">{formatDate(event.date)}</Text>
+        </View>
+        <View className="items-center justify-center pr-3">
+          <Ionicons name="chevron-forward" size={16} color="#6B7280" />
+        </View>
+      </TouchableOpacity>
+    );
+  }
 
   return (
     <ScrollView
@@ -93,54 +136,38 @@ export default function PredictionsScreen() {
           </View>
         )}
 
-        {/* Upcoming events with predictions */}
-        <Text className="text-muted text-xs uppercase tracking-wider font-semibold mb-3">
-          Open for Predictions
-        </Text>
-
         {loading ? (
           <ActivityIndicator color="#F5C518" className="mt-10" />
-        ) : events.length === 0 ? (
-          <View className="items-center mt-16">
-            <Text className="text-white text-2xl font-black italic mb-2">NO EVENTS</Text>
-            <Text className="text-muted text-sm text-center">
-              No upcoming events with predictions open right now.{"\n"}Check back soon.
-            </Text>
-          </View>
         ) : (
-          events.map((event) => (
-            <TouchableOpacity
-              key={event.id}
-              onPress={() => router.push(`/events/${event.slug}`)}
-              className="bg-surface border border-border rounded-xl overflow-hidden mb-3 flex-row"
-            >
-              {event.posterUrl ? (
-                <Image
-                  source={{ uri: event.posterUrl }}
-                  style={{ width: 80, height: 80 }}
-                  contentFit="cover"
-                />
-              ) : (
-                <View style={{ width: 80, height: 80 }} className="bg-subtle items-center justify-center">
-                  <Text className="text-muted text-xs">No img</Text>
-                </View>
-              )}
-              <View className="flex-1 p-3 justify-center">
-                <View className="flex-row items-center mb-1">
-                  <View className="bg-cyan/20 border border-cyan/30 rounded px-1.5 py-0.5 mr-2">
-                    <Text className="text-cyan text-[9px] font-bold uppercase">{event.promotion}</Text>
-                  </View>
-                  <View className="bg-yellow/10 border border-yellow/30 rounded px-1.5 py-0.5">
-                    <Text className="text-yellow text-[9px] font-bold uppercase">Predictions Open</Text>
-                  </View>
-                </View>
-                <Text className="text-white font-bold text-sm leading-tight mb-1" numberOfLines={2}>
-                  {event.title}
-                </Text>
-                <Text className="text-muted text-xs">{formatDate(event.date)}</Text>
+          <>
+            {/* Upcoming events */}
+            <Text className="text-muted text-xs uppercase tracking-wider font-semibold mb-3">
+              Open for Predictions
+            </Text>
+            {upcomingEvents.length === 0 ? (
+              <View className="items-center py-8 bg-surface border border-border rounded-xl mb-6">
+                <Text className="text-muted text-sm">No upcoming events right now</Text>
               </View>
-            </TouchableOpacity>
-          ))
+            ) : (
+              <View className="mb-6">
+                {upcomingEvents.map((event) => (
+                  <EventCard key={event.id} event={event} badge="Predictions Open" />
+                ))}
+              </View>
+            )}
+
+            {/* Past events with results */}
+            {pastEvents.length > 0 && (
+              <>
+                <Text className="text-muted text-xs uppercase tracking-wider font-semibold mb-3">
+                  Recent Results
+                </Text>
+                {pastEvents.map((event) => (
+                  <EventCard key={event.id} event={event} badge="View Results" />
+                ))}
+              </>
+            )}
+          </>
         )}
 
         {!token && (

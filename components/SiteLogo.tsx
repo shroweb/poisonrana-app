@@ -21,9 +21,7 @@ export default function SiteLogo({ tagline }: { tagline?: string }) {
           contentFit="contain"
         />
       ) : (
-        <Text className="text-yellow text-4xl font-black italic tracking-tight">
-          POISON RANA
-        </Text>
+        <View style={{ width: 120, height: 120 }} />
       )}
       {tagline && (
         <Text className="text-muted text-sm mt-1">{tagline}</Text>

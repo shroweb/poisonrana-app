@@ -153,9 +153,10 @@ export default function EventDetailScreen() {
   const [inWatchlist, setInWatchlist] = useState(false);
   const [togglingWatchlist, setTogglingWatchlist] = useState(false);
 
-  // Predictions: matchId -> chosen participantId
+  // Predictions: matchId -> chosen participantId (local + fetched)
   const [predictions, setPredictions] = useState<Record<string, string>>({});
   const [submittingPrediction, setSubmittingPrediction] = useState<string | null>(null);
+  const [predictionsLoading, setPredictionsLoading] = useState(false);
 
   useEffect(() => {
     const eventSlug = Array.isArray(slug) ? slug[0] : slug;
@@ -186,6 +187,23 @@ export default function EventDetailScreen() {
         .get<ApiResponse<Review[]>>(`/events/${slug}/reviews`)
         .then((res) => setReviews(res.data ?? []))
         .finally(() => setReviewsLoading(false));
+    }
+    if (activeTab === "predictions" && token) {
+      setPredictionsLoading(true);
+      api
+        .get<ApiResponse<{ matchId: string; predictedWinnerId: string }[]>>(
+          `/events/${slug}/predictions/me`
+        )
+        .then((res) => {
+          const saved = res.data ?? [];
+          if (saved.length > 0) {
+            const map: Record<string, string> = {};
+            saved.forEach((p) => { map[p.matchId] = p.predictedWinnerId; });
+            setPredictions((prev) => ({ ...map, ...prev }));
+          }
+        })
+        .catch(() => {})
+        .finally(() => setPredictionsLoading(false));
     }
   }, [activeTab]);
 
@@ -413,7 +431,7 @@ export default function EventDetailScreen() {
           <View className="flex-row border-b border-border mb-4">
             {([
               { key: "card", label: `Card (${event.matchCount ?? 0})` },
-              ...(isUpcoming && event.enablePredictions ? [{ key: "predictions", label: "Predictions" }] : []),
+              ...(event.enablePredictions ? [{ key: "predictions", label: "Predictions" }] : []),
               ...(hasEnded ? [{ key: "reviews", label: `Reviews (${event.reviewCount})` }] : []),
             ] as { key: "card" | "reviews" | "predictions"; label: string }[]).map((tab) => (
               <TouchableOpacity
@@ -431,48 +449,115 @@ export default function EventDetailScreen() {
           {/* Tab content */}
           {activeTab === "predictions" ? (
             <View className="pb-8">
-              {event.matches?.map((match) => {
-                const teams = match.participants.reduce<Record<number, typeof match.participants>>((acc, p) => {
-                  (acc[p.team] = acc[p.team] || []).push(p);
-                  return acc;
-                }, {});
-                const teamList = Object.values(teams);
-                const chosen = predictions[match.id];
-                return (
-                  <View key={match.id} className="bg-surface border border-border rounded-xl p-4 mb-3">
-                    <Text className="text-cyan text-[10px] font-bold uppercase tracking-wider mb-1">{match.type}</Text>
-                    <Text className="text-white font-bold text-sm mb-3">{match.title}</Text>
-                    <Text className="text-muted text-[10px] uppercase tracking-wider mb-2 font-semibold">Pick your winner</Text>
-                    <View className="gap-2">
-                      {teamList.map((team, i) => {
-                        const participantId = team[0].id;
-                        const isChosen = chosen === participantId;
-                        const isLoading = submittingPrediction === match.id;
-                        return (
-                          <TouchableOpacity
-                            key={i}
-                            onPress={() => submitPrediction(match.id, participantId)}
-                            disabled={isLoading}
-                            className={`flex-row items-center p-3 rounded-xl border ${
-                              isChosen
-                                ? "bg-yellow/10 border-yellow"
-                                : "bg-subtle border-border"
-                            }`}
-                          >
-                            <View className={`w-4 h-4 rounded-full border mr-3 items-center justify-center ${isChosen ? "border-yellow bg-yellow" : "border-muted"}`}>
-                              {isChosen && <View className="w-2 h-2 rounded-full bg-background" />}
-                            </View>
-                            <Text className={`text-sm font-semibold flex-1 ${isChosen ? "text-yellow" : "text-white"}`}>
-                              {team.map((p) => p.wrestler.name).join(" & ")}
+              {predictionsLoading ? (
+                <ActivityIndicator color="#F5C518" className="mt-8" />
+              ) : hasEnded ? (
+                // Resolved predictions view
+                event.matches?.map((match) => {
+                  const teams = match.participants.reduce<Record<number, typeof match.participants>>((acc, p) => {
+                    (acc[p.team] = acc[p.team] || []).push(p);
+                    return acc;
+                  }, {});
+                  const teamList = Object.values(teams);
+                  const hasResults = match.participants.some((p) => p.isWinner);
+                  const chosen = predictions[match.id];
+                  const chosenTeam = teamList.find((t) => t[0].id === chosen);
+                  const chosenWon = chosenTeam ? chosenTeam.some((p) => p.isWinner) : null;
+                  return (
+                    <View key={match.id} className="bg-surface border border-border rounded-xl p-4 mb-3">
+                      <View className="flex-row justify-between items-start mb-2">
+                        <View className="flex-1 mr-2">
+                          <Text className="text-cyan text-[10px] font-bold uppercase tracking-wider mb-0.5">{match.type}</Text>
+                          <Text className="text-white font-bold text-sm">{match.title}</Text>
+                        </View>
+                        {chosen && hasResults && chosenWon !== null && (
+                          <View className={`rounded-lg px-2 py-1 border ${chosenWon ? "bg-green-500/20 border-green-500/40" : "bg-red-500/20 border-red-500/40"}`}>
+                            <Text className={`text-[10px] font-bold uppercase ${chosenWon ? "text-green-400" : "text-red-400"}`}>
+                              {chosenWon ? "Called it!" : "Wrong pick"}
                             </Text>
-                            {isLoading && <ActivityIndicator size="small" color="#F5C518" />}
-                          </TouchableOpacity>
-                        );
-                      })}
+                          </View>
+                        )}
+                      </View>
+
+                      {hasResults && (
+                        <>
+                          <Text className="text-muted text-[10px] uppercase tracking-wider font-semibold mb-1.5">Result</Text>
+                          <View className="flex-row flex-wrap gap-1 mb-3">
+                            {match.participants.filter((p) => p.isWinner).map((p) => (
+                              <View key={p.id} className="flex-row items-center bg-yellow/10 border border-yellow/30 rounded-md px-2 py-0.5">
+                                <Text className="text-yellow text-[11px] font-semibold mr-1">🏆</Text>
+                                <Text className="text-yellow text-[11px] font-semibold">{p.wrestler.name}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </>
+                      )}
+
+                      {chosen && (
+                        <>
+                          <Text className="text-muted text-[10px] uppercase tracking-wider font-semibold mb-1.5">Your pick</Text>
+                          <View className="flex-row flex-wrap gap-1">
+                            {(chosenTeam ?? []).map((p) => (
+                              <View key={p.id} className={`rounded-md px-2 py-0.5 border ${chosenWon ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30"}`}>
+                                <Text className={`text-[11px] font-semibold ${chosenWon ? "text-green-400" : "text-red-400"}`}>{p.wrestler.name}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </>
+                      )}
+
+                      {!chosen && !token && (
+                        <Text className="text-muted text-xs italic">Sign in to see your pick</Text>
+                      )}
+                      {!chosen && token && (
+                        <Text className="text-muted text-xs italic">No prediction made</Text>
+                      )}
                     </View>
-                  </View>
-                );
-              })}
+                  );
+                })
+              ) : (
+                // Upcoming — pick UI
+                event.matches?.map((match) => {
+                  const teams = match.participants.reduce<Record<number, typeof match.participants>>((acc, p) => {
+                    (acc[p.team] = acc[p.team] || []).push(p);
+                    return acc;
+                  }, {});
+                  const teamList = Object.values(teams);
+                  const chosen = predictions[match.id];
+                  return (
+                    <View key={match.id} className="bg-surface border border-border rounded-xl p-4 mb-3">
+                      <Text className="text-cyan text-[10px] font-bold uppercase tracking-wider mb-1">{match.type}</Text>
+                      <Text className="text-white font-bold text-sm mb-3">{match.title}</Text>
+                      <Text className="text-muted text-[10px] uppercase tracking-wider mb-2 font-semibold">Pick your winner</Text>
+                      <View className="gap-2">
+                        {teamList.map((team, i) => {
+                          const participantId = team[0].id;
+                          const isChosen = chosen === participantId;
+                          const isLoading = submittingPrediction === match.id;
+                          return (
+                            <TouchableOpacity
+                              key={i}
+                              onPress={() => submitPrediction(match.id, participantId)}
+                              disabled={isLoading}
+                              className={`flex-row items-center p-3 rounded-xl border ${
+                                isChosen ? "bg-yellow/10 border-yellow" : "bg-subtle border-border"
+                              }`}
+                            >
+                              <View className={`w-4 h-4 rounded-full border mr-3 items-center justify-center ${isChosen ? "border-yellow bg-yellow" : "border-muted"}`}>
+                                {isChosen && <View className="w-2 h-2 rounded-full bg-background" />}
+                              </View>
+                              <Text className={`text-sm font-semibold flex-1 ${isChosen ? "text-yellow" : "text-white"}`}>
+                                {team.map((p) => p.wrestler.name).join(" & ")}
+                              </Text>
+                              {isLoading && <ActivityIndicator size="small" color="#F5C518" />}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
             </View>
           ) : activeTab === "card" ? (
             <View className="pb-8">

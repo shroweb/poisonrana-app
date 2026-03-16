@@ -19,10 +19,10 @@ function HeaderLogo() {
   if (!logoUrl) return null;
 
   return (
-    <View style={{ marginLeft: 16 }}>
+    <View style={{ marginLeft: 16, marginRight: 10 }}>
       <Image
         source={{ uri: logoUrl }}
-        style={{ width: 36, height: 36 }}
+        style={{ width: 32, height: 32 }}
         contentFit="contain"
       />
     </View>
@@ -36,7 +36,7 @@ export default function TabsLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: "#0B1120" },
         headerTintColor: "#FFFFFF",
-        headerTitleStyle: { fontWeight: "bold" },
+        headerTitleStyle: { fontWeight: "900", fontSize: 18, letterSpacing: 0.3 },
         headerLeft: () => <HeaderLogo />,
         tabBarStyle: {
           backgroundColor: "#111827",
