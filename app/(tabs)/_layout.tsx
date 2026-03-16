@@ -19,10 +19,10 @@ function HeaderLogo() {
   if (!logoUrl) return null;
 
   return (
-    <View style={{ marginLeft: 16, marginRight: 10 }}>
+    <View style={{ marginLeft: 4, marginRight: 14 }}>
       <Image
         source={{ uri: logoUrl }}
-        style={{ width: 32, height: 32 }}
+        style={{ width: 34, height: 34 }}
         contentFit="contain"
       />
     </View>

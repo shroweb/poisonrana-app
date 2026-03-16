@@ -99,5 +99,7 @@ export interface Review {
 export interface WatchlistItem {
   id: string;
   event: Event;
-  addedAt: string;
+  createdAt: string;
+  watched?: boolean;
+  attended?: boolean;
 }
