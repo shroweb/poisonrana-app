@@ -188,24 +188,25 @@ export default function EventDetailScreen() {
         .then((res) => setReviews(res.data ?? []))
         .finally(() => setReviewsLoading(false));
     }
-    if (activeTab === "predictions" && token) {
+    if (activeTab === "predictions" && token && event) {
       setPredictionsLoading(true);
       api
         .get<ApiResponse<{ matchId: string; predictedWinnerId: string }[]>>(
-          `/events/${slug}/predictions/me`
+          "/predictions/me",
+          { eventId: event.id }
         )
         .then((res) => {
           const saved = res.data ?? [];
           if (saved.length > 0) {
             const map: Record<string, string> = {};
             saved.forEach((p) => { map[p.matchId] = p.predictedWinnerId; });
-            setPredictions((prev) => ({ ...map, ...prev }));
+            setPredictions(map);
           }
         })
         .catch(() => {})
         .finally(() => setPredictionsLoading(false));
     }
-  }, [activeTab]);
+  }, [activeTab, event?.id, token]);
 
   async function submitReview() {
     if (!token) {
