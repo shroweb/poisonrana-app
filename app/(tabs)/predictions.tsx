@@ -24,10 +24,15 @@ function formatDate(dateStr: string) {
 
 export default function PredictionsScreen() {
   const router = useRouter();
-  const { user, token } = useAuth();
+  const { user, token, hydrate } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Refresh user on mount so prediction score is up to date
+  useEffect(() => {
+    if (token) hydrate();
+  }, [token]);
 
   async function fetchEvents() {
     const res = await api.get<ApiResponse<Event[]>>("/events", {

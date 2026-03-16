@@ -143,6 +143,7 @@ export default function EventDetailScreen() {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [myReview, setMyReview] = useState<{ rating: number; comment: string } | null>(null);
 
   // Match rate modal
   const [rateMatchId, setRateMatchId] = useState<string | null>(null);
@@ -185,7 +186,15 @@ export default function EventDetailScreen() {
       setReviewsLoading(true);
       api
         .get<ApiResponse<Review[]>>(`/events/${slug}/reviews`)
-        .then((res) => setReviews(res.data ?? []))
+        .then((res) => {
+          const fetched = res.data ?? [];
+          setReviews(fetched);
+          // Detect user's existing review
+          if (user) {
+            const mine = fetched.find((r) => r.user.id === user.id);
+            if (mine) setMyReview({ rating: mine.rating, comment: mine.comment ?? "" });
+          }
+        })
         .finally(() => setReviewsLoading(false));
     }
     if (activeTab === "predictions" && token && event) {
@@ -223,12 +232,16 @@ export default function EventDetailScreen() {
         rating: reviewRating,
         comment: reviewComment || undefined,
       });
+      // Save as user's review so reopening the modal pre-populates it
+      setMyReview({ rating: reviewRating, comment: reviewComment });
       setReviewModalVisible(false);
-      setReviewRating(0);
-      setReviewComment("");
-      // Refresh event to get updated average
+      // Refresh event to get updated average, and refresh reviews list if open
       const res = await api.get<ApiResponse<Event>>(`/events/${slug}`);
       setEvent(res.data);
+      if (activeTab === "reviews") {
+        const rRes = await api.get<ApiResponse<Review[]>>(`/events/${slug}/reviews`);
+        setReviews(rRes.data ?? []);
+      }
     } catch {
       Alert.alert("Error", "Failed to submit review.");
     } finally {
@@ -414,11 +427,14 @@ export default function EventDetailScreen() {
           {hasEnded && (
             <View className="mb-4">
               <Button
-                label={token ? "Write a Review" : "Sign In to Review"}
+                label={token ? (myReview ? "Update Review" : "Write a Review") : "Sign In to Review"}
                 onPress={() => {
                   if (!token) {
                     router.push("/(auth)/login");
                   } else {
+                    // Pre-populate with existing review if present
+                    setReviewRating(myReview?.rating ?? 0);
+                    setReviewComment(myReview?.comment ?? "");
                     setReviewModalVisible(true);
                   }
                 }}
@@ -623,7 +639,7 @@ export default function EventDetailScreen() {
           <View className="bg-surface border-t border-border rounded-t-3xl px-6 pt-6 pb-10">
             <View className="w-12 h-1 bg-border rounded-full self-center mb-6" />
             <Text className="text-white text-xl font-black italic mb-1">
-              RATE THIS EVENT
+              {myReview ? "UPDATE REVIEW" : "RATE THIS EVENT"}
             </Text>
             <Text className="text-muted text-sm mb-6">{event.title}</Text>
 
@@ -654,7 +670,7 @@ export default function EventDetailScreen() {
 
             <View className="gap-3">
               <Button
-                label="Submit Review"
+                label={myReview ? "Update Review" : "Submit Review"}
                 onPress={submitReview}
                 loading={submittingReview}
                 fullWidth
