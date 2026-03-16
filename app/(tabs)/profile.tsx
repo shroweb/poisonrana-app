@@ -31,15 +31,6 @@ type MyReview = {
   };
 };
 
-type FeedItem = {
-  id: string;
-  rating: number;
-  comment?: string;
-  createdAt: string;
-  user: { id: string; name: string; slug: string; avatarUrl: string | null };
-  event: { id: string; title: string; slug: string; date: string; promotion: string; posterUrl?: string };
-};
-
 function Avatar({ url, name, size = 80 }: { url?: string | null; name: string; size?: number }) {
   const initials = (name ?? "")
     .split(" ")
@@ -76,24 +67,21 @@ export default function ProfileScreen() {
   const { token, user, logout } = useAuth();
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [reviews, setReviews] = useState<MyReview[]>([]);
-  const [feed, setFeed] = useState<FeedItem[]>([]);
   const [rank, setRank] = useState<{ rank: number | null; total: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"watchlist" | "reviews" | "feed">("watchlist");
+  const [activeTab, setActiveTab] = useState<"watchlist" | "reviews">("watchlist");
 
   async function fetchData() {
     if (!token) return;
-    const [wl, rv, rk, fd] = await Promise.allSettled([
+    const [wl, rv, rk] = await Promise.allSettled([
       api.get<ApiResponse<WatchlistItem[]>>("/me/watchlist"),
       api.get<ApiResponse<MyReview[]>>("/me/reviews"),
       api.get<ApiResponse<{ rank: number | null; total: number }>>("/me/rank"),
-      api.get<ApiResponse<FeedItem[]>>("/me/feed"),
     ]);
     if (wl.status === "fulfilled") setWatchlist(wl.value.data ?? []);
     if (rv.status === "fulfilled") setReviews(rv.value.data ?? []);
     if (rk.status === "fulfilled") setRank(rk.value.data ?? null);
-    if (fd.status === "fulfilled") setFeed(fd.value.data ?? []);
   }
 
   useEffect(() => {
@@ -222,7 +210,6 @@ export default function ProfileScreen() {
         {([
           { key: "watchlist", label: `Watchlist (${watchlist.length})` },
           { key: "reviews", label: `Reviews (${reviews.length})` },
-          { key: "feed", label: "Feed" },
         ] as const).map((tab) => (
           <TouchableOpacity
             key={tab.key}
@@ -262,7 +249,7 @@ export default function ProfileScreen() {
             </View>
           )}
         </View>
-      ) : activeTab === "reviews" ? (
+      ) : (
         <View className="px-4 pb-10">
           {reviews.length === 0 ? (
             <View className="items-center mt-10">
@@ -292,69 +279,6 @@ export default function ProfileScreen() {
                 {review.comment && (
                   <Text className="text-muted text-sm leading-relaxed" numberOfLines={3}>
                     {review.comment}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
-      ) : (
-        <View className="px-4 pb-10">
-          {feed.length === 0 ? (
-            <View className="items-center mt-10">
-              <Text className="text-muted text-center">
-                Follow other fans to see their reviews here.
-              </Text>
-            </View>
-          ) : (
-            feed.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                onPress={() => router.push(`/events/${item.event.slug}`)}
-                className="bg-surface border border-border rounded-xl p-4 mb-3"
-              >
-                <View className="flex-row items-center mb-3">
-                  {item.user.avatarUrl ? (
-                    <Image
-                      source={{ uri: item.user.avatarUrl }}
-                      style={{ width: 32, height: 32, borderRadius: 16 }}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <View className="w-8 h-8 rounded-full bg-yellow items-center justify-center">
-                      <Text className="text-black text-xs font-black">
-                        {(item.user.name ?? "?")[0].toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-                  <View className="ml-2 flex-1">
-                    <Text className="text-white text-sm font-bold">{item.user.name}</Text>
-                    <Text className="text-muted text-xs">
-                      {new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                    </Text>
-                  </View>
-                  <Text className="text-yellow font-black">★ {item.rating.toFixed(1)}</Text>
-                </View>
-                <View className="flex-row items-center mb-2">
-                  {item.event.posterUrl ? (
-                    <Image
-                      source={{ uri: item.event.posterUrl }}
-                      style={{ width: 44, height: 44, borderRadius: 6 }}
-                      contentFit="cover"
-                    />
-                  ) : null}
-                  <View className="ml-2 flex-1">
-                    <View className="bg-cyan/20 border border-cyan/30 rounded px-1.5 py-0.5 self-start mb-0.5">
-                      <Text className="text-cyan text-[9px] font-bold uppercase">{item.event.promotion}</Text>
-                    </View>
-                    <Text className="text-white text-sm font-bold leading-tight" numberOfLines={2}>
-                      {item.event.title}
-                    </Text>
-                  </View>
-                </View>
-                {item.comment && (
-                  <Text className="text-muted text-sm leading-relaxed" numberOfLines={3}>
-                    {item.comment}
                   </Text>
                 )}
               </TouchableOpacity>
