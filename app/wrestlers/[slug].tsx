@@ -44,11 +44,15 @@ function formatDate(dateStr: string) {
   });
 }
 
+const BIO_LINES = 4;
+const BIO_THRESHOLD = 220;
+
 export default function WrestlerDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const router = useRouter();
   const [wrestler, setWrestler] = useState<WrestlerWithMatches | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bioExpanded, setBioExpanded] = useState(false);
 
   useEffect(() => {
     const wrestlerSlug = Array.isArray(slug) ? slug[0] : slug;
@@ -61,9 +65,27 @@ export default function WrestlerDetailScreen() {
 
   if (loading) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator color="#F5C518" size="large" />
-      </View>
+      <ScrollView className="flex-1 bg-background" showsVerticalScrollIndicator={false}>
+        <View className="items-center pt-20 pb-6 px-4">
+          <View className="w-28 h-28 rounded-full bg-subtle" />
+          <View className="h-6 w-40 bg-subtle rounded-lg mt-4" />
+          <View className="h-3 w-64 bg-subtle rounded mt-3" />
+          <View className="h-3 w-56 bg-subtle rounded mt-2" />
+          <View className="h-3 w-48 bg-subtle rounded mt-2" />
+        </View>
+        <View className="px-4 pb-8">
+          <View className="h-4 w-32 bg-subtle rounded mb-3" />
+          {[1, 2, 3, 4].map((i) => (
+            <View key={i} className="bg-surface border border-border rounded-xl p-3 mb-3 flex-row items-center">
+              <View className="w-6 h-6 rounded-full bg-subtle mr-3" />
+              <View className="flex-1">
+                <View className="h-3 bg-subtle rounded w-3/4 mb-1.5" />
+                <View className="h-2.5 bg-subtle rounded w-1/2" />
+              </View>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
     );
   }
 
@@ -94,9 +116,21 @@ export default function WrestlerDetailScreen() {
           {wrestler.name.toUpperCase()}
         </Text>
         {wrestler.bio && (
-          <Text className="text-muted text-sm text-center mt-2 italic">
-            {wrestler.bio}
-          </Text>
+          <View className="mt-2 px-2">
+            <Text
+              className="text-muted text-sm text-center italic leading-relaxed"
+              numberOfLines={bioExpanded ? undefined : BIO_LINES}
+            >
+              {wrestler.bio}
+            </Text>
+            {wrestler.bio.length > BIO_THRESHOLD && (
+              <TouchableOpacity onPress={() => setBioExpanded((v) => !v)} className="mt-2 items-center">
+                <Text className="text-yellow text-xs font-bold uppercase tracking-wide">
+                  {bioExpanded ? "Read Less ↑" : "Read More ↓"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
         <View className="mt-3 bg-surface border border-border rounded-xl px-6 py-2">
           <Text className="text-yellow font-bold text-center">

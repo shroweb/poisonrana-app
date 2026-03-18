@@ -10,11 +10,22 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  Share,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import { useEffect, useState } from "react";
+import * as Haptics from "expo-haptics";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
+// react-native-image-colors requires a dev client build — graceful no-op in Expo Go
+let getImageColors: ((url: string, opts: object) => Promise<any>) | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  getImageColors = require("react-native-image-colors").default?.getColors ?? require("react-native-image-colors").getColors ?? null;
+} catch {
+  getImageColors = null;
+}
 import { api } from "@/lib/api";
 import { Event, Match, ApiResponse, Review } from "@/lib/types";
 import { useAuth } from "@/store/auth";
@@ -23,6 +34,30 @@ import Button from "@/components/Button";
 
 const { width } = Dimensions.get("window");
 const POSTER_HEIGHT = width * 0.75;
+
+/** Blends a hex color 50/50 with the dark background (#0B1120) then applies alpha */
+function posterTint(hex: string, alpha: number): string {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return `rgba(11,17,32,${alpha})`;
+  const ri = parseInt(m[1], 16);
+  const gi = parseInt(m[2], 16);
+  const bi = parseInt(m[3], 16);
+  const r = Math.round(ri * 0.5 + 11 * 0.5);
+  const g = Math.round(gi * 0.5 + 17 * 0.5);
+  const b = Math.round(bi * 0.5 + 32 * 0.5);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 function formatDuration(seconds?: number) {
   if (!seconds) return "—";
@@ -40,8 +75,9 @@ function formatDate(dateStr: string) {
   });
 }
 
-function MatchCard({ match, onRate, disabled }: { match: Match; onRate: (id: string) => void; disabled?: boolean }) {
-  const hasResults = match.participants.some((p) => p.isWinner);
+function MatchCard({ match, onRate, isUpcoming, spoilersRevealed }: { match: Match; onRate: (id: string) => void; isUpcoming?: boolean; spoilersRevealed?: boolean }) {
+  const rawHasResults = match.participants.some((p) => p.isWinner);
+  const hasResults = rawHasResults && (spoilersRevealed ?? true);
 
   // Group participants by team number
   const teamMap = match.participants.reduce((acc, p) => {
@@ -64,9 +100,11 @@ function MatchCard({ match, onRate, disabled }: { match: Match; onRate: (id: str
           </Text>
         </View>
         <View className="items-end">
-          <Text className="text-yellow text-sm font-bold">
-            ★ {match.rating > 0 ? match.rating.toFixed(2) : "—"}
-          </Text>
+          {!isUpcoming && match.rating > 0 && (
+            <Text className="text-yellow text-sm font-bold">
+              ★ {match.rating.toFixed(2)}
+            </Text>
+          )}
           <Text className="text-muted text-[10px]">
             {formatDuration(match.duration)}
           </Text>
@@ -113,7 +151,7 @@ function MatchCard({ match, onRate, disabled }: { match: Match; onRate: (id: str
         )}
       </View>
 
-      {!disabled && (
+      {!isUpcoming && (
         <TouchableOpacity
           onPress={() => onRate(match.id)}
           className="border border-border rounded-lg py-2 items-center"
@@ -130,6 +168,7 @@ function MatchCard({ match, onRate, disabled }: { match: Match; onRate: (id: str
 export default function EventDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const router = useRouter();
+  const navigation = useNavigation();
   const { token, user } = useAuth();
 
   const [event, setEvent] = useState<Event | null>(null);
@@ -137,7 +176,9 @@ export default function EventDetailScreen() {
   const [activeTab, setActiveTab] = useState<"card" | "reviews" | "predictions">("card");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewSort, setReviewSort] = useState<"newest" | "highest">("newest");
   const [following, setFollowing] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
 
   // Review modal
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
@@ -160,27 +201,76 @@ export default function EventDetailScreen() {
   const [submittingPrediction, setSubmittingPrediction] = useState<string | null>(null);
   const [predictionsLoading, setPredictionsLoading] = useState(false);
 
+  // Spoiler toggle
+  const [spoilersRevealed, setSpoilersRevealed] = useState(false);
+
+  // Related events
+  const [relatedEvents, setRelatedEvents] = useState<Event[]>([]);
+
+  // Poster dominant color for gradient tint
+  const [posterColor, setPosterColor] = useState<string | null>(null);
+
   useEffect(() => {
+    let cancelled = false;
     const eventSlug = Array.isArray(slug) ? slug[0] : slug;
     api
       .get<ApiResponse<Event>>(`/events/${eventSlug}`)
       .then((res) => {
+        if (cancelled) return;
         const ev = res.data ?? null;
         setEvent(ev);
-        // Pre-load watchlist state if user is logged in
+        if (ev) {
+          api.get<ApiResponse<Event[]>>("/events", { limit: 10, promotion: ev.promotion, upcoming: "false", sort: "date_desc" })
+            .then((r) => setRelatedEvents((r.data ?? []).filter((e) => e.id !== ev.id).slice(0, 8)))
+            .catch(() => {});
+          if (ev.posterUrl && getImageColors) {
+            getImageColors(ev.posterUrl, { fallback: "#1a2540", cache: true, key: ev.id })
+              .then((colors: any) => {
+                if (cancelled) return;
+                const c =
+                  colors.platform === "ios" ? colors.background :
+                  colors.platform === "android" ? (colors.dominant ?? colors.vibrant) :
+                  colors.hex;
+                if (c) setPosterColor(c);
+              })
+              .catch(() => {});
+          }
+        }
         if (ev && token) {
           api
             .get<ApiResponse<{ event: { id: string } }[]>>("/me/watchlist", { limit: 200 })
             .then((wRes) => {
+              if (cancelled) return;
               const items = wRes.data ?? [];
               setInWatchlist(items.some((item) => item.event.id === ev.id));
             })
             .catch(() => {});
         }
       })
-      .catch((err) => console.error("Event fetch error:", err))
-      .finally(() => setLoading(false));
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [slug]);
+
+  useEffect(() => {
+    if (!event) return;
+    const eventSlug = Array.isArray(slug) ? slug[0] : slug;
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() =>
+            Share.share({
+              url: `https://poisonrana.com/events/${eventSlug}`,
+              message: event.title,
+            })
+          }
+          style={{ marginRight: 8, width: 34, height: 34, alignItems: "center", justifyContent: "center" }}
+        >
+          <Ionicons name="share-outline" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [event]);
 
   useEffect(() => {
     if (activeTab === "reviews") {
@@ -233,6 +323,7 @@ export default function EventDetailScreen() {
         rating: reviewRating,
         comment: reviewComment || undefined,
       });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Save as user's review so reopening the modal pre-populates it
       setMyReview({ rating: reviewRating, comment: reviewComment });
       setReviewModalVisible(false);
@@ -274,15 +365,19 @@ export default function EventDetailScreen() {
   async function toggleWatchlist() {
     if (!token) { router.push("/(auth)/login"); return; }
     if (!event) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTogglingWatchlist(true);
     try {
       if (inWatchlist) {
         await api.delete("/me/watchlist", { eventId: event.id });
         setInWatchlist(false);
+        setToast("Removed from watchlist");
       } else {
         await api.post("/me/watchlist", { eventId: event.id });
         setInWatchlist(true);
+        setToast("Added to watchlist");
       }
+      setTimeout(() => setToast(null), 2000);
     } catch {
       Alert.alert("Error", "Failed to update watchlist.");
     } finally {
@@ -292,6 +387,7 @@ export default function EventDetailScreen() {
 
   async function submitPrediction(matchId: string, participantId: string) {
     if (!token) { router.push("/(auth)/login"); return; }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSubmittingPrediction(matchId);
     try {
       await api.post("/predictions", { matchId, predictedWinnerId: participantId });
@@ -313,9 +409,33 @@ export default function EventDetailScreen() {
 
   if (loading) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator color="#F5C518" size="large" />
-      </View>
+      <ScrollView className="flex-1 bg-background" showsVerticalScrollIndicator={false}>
+        <View style={{ height: POSTER_HEIGHT }} className="bg-subtle" />
+        <View className="px-4 mt-4">
+          <View className="h-3 w-16 bg-subtle rounded mb-2" />
+          <View className="h-7 w-3/4 bg-subtle rounded-lg mb-1" />
+          <View className="h-7 w-1/2 bg-subtle rounded-lg mb-3" />
+          <View className="h-3 w-40 bg-subtle rounded mb-4" />
+          <View className="flex-row bg-surface border border-border rounded-xl overflow-hidden mb-4">
+            {[0,1,2].map((i) => (
+              <View key={i} className={`flex-1 items-center py-3 ${i < 2 ? "border-r border-border" : ""}`}>
+                <View className="h-5 w-10 bg-subtle rounded mb-1" />
+                <View className="h-2 w-12 bg-subtle rounded" />
+              </View>
+            ))}
+          </View>
+          <View className="h-10 w-full bg-subtle rounded-xl mb-3" />
+          <View className="flex-row border-b border-border mb-4 gap-2">
+            {[0,1].map((i) => <View key={i} className="h-8 w-20 bg-subtle rounded-t" />)}
+          </View>
+          {[0,1,2].map((i) => (
+            <View key={i} className="bg-surface border border-border rounded-xl p-4 mb-3">
+              <View className="h-3 w-3/4 bg-subtle rounded mb-2" />
+              <View className="h-3 w-1/2 bg-subtle rounded" />
+            </View>
+          ))}
+        </View>
+      </ScrollView>
     );
   }
 
@@ -341,9 +461,21 @@ export default function EventDetailScreen() {
           ) : (
             <View style={{ width, height: POSTER_HEIGHT }} className="bg-surface" />
           )}
+          {/* Top fade — blends into transparent nav header */}
           <LinearGradient
-            colors={["transparent", "rgba(11,17,32,0.7)", "#0B1120"]}
-            style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: POSTER_HEIGHT * 0.75 }}
+            colors={[posterColor ? posterTint(posterColor, 0.85) : "rgba(11,17,32,0.55)", "transparent"]}
+            style={{ position: "absolute", top: 0, left: 0, right: 0, height: 120 }}
+          />
+          {/* Bottom fade — transitions into content */}
+          <LinearGradient
+            colors={[
+              "transparent",
+              posterColor ? posterTint(posterColor, 0.6) : "rgba(11,17,32,0.55)",
+              posterColor ? posterTint(posterColor, 0.95) : "rgba(11,17,32,0.92)",
+              "#0B1120",
+            ]}
+            locations={[0, 0.4, 0.72, 1]}
+            style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: POSTER_HEIGHT * 0.85 }}
           />
         </View>
 
@@ -471,7 +603,41 @@ export default function EventDetailScreen() {
                 <ActivityIndicator color="#F5C518" className="mt-8" />
               ) : hasEnded ? (
                 // Resolved predictions view
-                event.matches?.map((match) => {
+                (() => {
+                  const matches = event.matches ?? [];
+                  const scored = matches.filter((m) => {
+                    const chosen = predictions[m.id];
+                    if (!chosen) return false;
+                    const hasResults = m.participants.some((p) => p.isWinner);
+                    return hasResults;
+                  });
+                  const correct = scored.filter((m) => {
+                    const chosen = predictions[m.id];
+                    const teams = Object.values(
+                      m.participants.reduce<Record<number, typeof m.participants>>((acc, p) => {
+                        (acc[p.team] = acc[p.team] || []).push(p); return acc;
+                      }, {})
+                    );
+                    const chosenTeam = teams.find((t) => t.some((p) => p.wrestler.id === chosen));
+                    return chosenTeam?.some((p) => p.isWinner) ?? false;
+                  });
+                  return (
+                    <>
+                      {scored.length > 0 && (
+                        <View className="bg-surface border border-border rounded-xl p-4 mb-4 flex-row items-center justify-between">
+                          <View>
+                            <Text className="text-muted text-[10px] uppercase tracking-wider font-bold mb-0.5">Your Score</Text>
+                            <Text className="text-white font-black text-xl">
+                              {Math.round((correct.length / scored.length) * 100)}%{" "}
+                              <Text className="text-muted text-sm font-normal">({correct.length}/{scored.length} correct)</Text>
+                            </Text>
+                          </View>
+                          <View className="w-12 h-12 rounded-full bg-yellow/20 border border-yellow/40 items-center justify-center">
+                            <Text className="text-yellow font-black text-base">{correct.length}/{scored.length}</Text>
+                          </View>
+                        </View>
+                      )}
+                      {matches.map((match) => {
                   const teams = match.participants.reduce<Record<number, typeof match.participants>>((acc, p) => {
                     (acc[p.team] = acc[p.team] || []).push(p);
                     return acc;
@@ -534,7 +700,10 @@ export default function EventDetailScreen() {
                       )}
                     </View>
                   );
-                })
+                })}
+                    </>
+                  );
+                })()
               ) : (
                 // Upcoming — pick UI
                 event.matches?.map((match) => {
@@ -583,11 +752,27 @@ export default function EventDetailScreen() {
             </View>
           ) : activeTab === "card" ? (
             <View className="pb-8">
+              {/* Spoiler toggle — shown for past events with results */}
+              {!isUpcoming && !spoilersRevealed && (event.matches ?? []).some((m) => m.participants.some((p) => p.isWinner)) && (
+                <TouchableOpacity
+                  onPress={() => setSpoilersRevealed(true)}
+                  className="bg-surface border border-border rounded-xl p-4 mb-4 flex-row items-center justify-between"
+                >
+                  <View className="flex-1">
+                    <Text className="text-white font-black text-sm">Results Hidden</Text>
+                    <Text className="text-muted text-xs mt-0.5">Tap to reveal match winners</Text>
+                  </View>
+                  <View className="bg-yellow/10 border border-yellow/30 rounded-lg px-3 py-1.5">
+                    <Text className="text-yellow text-xs font-black uppercase tracking-wide">Reveal</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
               {event.matches?.map((match) => (
                 <MatchCard
                   key={match.id}
                   match={match}
-                  disabled={isUpcoming}
+                  isUpcoming={isUpcoming}
+                  spoilersRevealed={spoilersRevealed}
                   onRate={(id) => {
                     setRateMatchId(id);
                     setMatchRating(0);
@@ -597,6 +782,45 @@ export default function EventDetailScreen() {
             </View>
           ) : (
             <View className="pb-8">
+              {!reviewsLoading && reviews.length >= 1 && (() => {
+                const counts = [5, 4, 3, 2, 1].map((star) => ({
+                  star,
+                  count: reviews.filter((r) => Math.round(r.rating) === star).length,
+                }));
+                const maxCount = Math.max(...counts.map((c) => c.count), 1);
+                return (
+                  <View className="bg-surface border border-border rounded-xl p-4 mb-4">
+                    <Text className="text-white text-xs font-bold uppercase tracking-wider mb-3">Rating Distribution</Text>
+                    {counts.map(({ star, count }) => (
+                      <View key={star} className="flex-row items-center mb-1.5">
+                        <Text className="text-yellow text-[10px] w-6 mr-2">★{star}</Text>
+                        <View className="flex-1 h-2 bg-subtle rounded-full overflow-hidden">
+                          <View
+                            style={{ width: `${(count / maxCount) * 100}%`, height: "100%" }}
+                            className="bg-yellow rounded-full"
+                          />
+                        </View>
+                        <Text className="text-muted text-[10px] ml-2 w-4 text-right">{count}</Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+              {!reviewsLoading && reviews.length > 1 && (
+                <View className="flex-row bg-surface border border-border rounded-xl p-1 mb-4">
+                  {(["newest", "highest"] as const).map((s) => (
+                    <TouchableOpacity
+                      key={s}
+                      onPress={() => setReviewSort(s)}
+                      className={`flex-1 py-1.5 rounded-lg items-center ${reviewSort === s ? "bg-yellow" : ""}`}
+                    >
+                      <Text className={`text-xs font-bold uppercase tracking-wide ${reviewSort === s ? "text-black" : "text-muted"}`}>
+                        {s === "newest" ? "Newest" : "Top Rated"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
               {reviewsLoading ? (
                 <ActivityIndicator color="#F5C518" className="mt-8" />
               ) : reviews.length === 0 ? (
@@ -604,7 +828,13 @@ export default function EventDetailScreen() {
                   <Text className="text-muted">No reviews yet. Be first!</Text>
                 </View>
               ) : (
-                reviews.map((review) => (
+                [...reviews]
+                  .sort((a, b) =>
+                    reviewSort === "highest"
+                      ? b.rating - a.rating
+                      : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                  )
+                  .map((review) => (
                   <View
                     key={review.id}
                     className="bg-surface border border-border rounded-xl p-4 mb-3"
@@ -624,9 +854,12 @@ export default function EventDetailScreen() {
                             </Text>
                           </View>
                         )}
-                        <Text className="text-white font-bold text-sm ml-2 flex-1" numberOfLines={1}>
-                          {review.user.name}
-                        </Text>
+                        <View className="ml-2 flex-1">
+                          <Text className="text-white font-bold text-sm" numberOfLines={1}>
+                            {review.user.name}
+                          </Text>
+                          <Text className="text-muted text-[10px]">{timeAgo(review.createdAt)}</Text>
+                        </View>
                       </View>
                       <View className="flex-row items-center gap-2">
                         {token && user && review.user.id !== user.id && (
@@ -657,16 +890,78 @@ export default function EventDetailScreen() {
                       </View>
                     </View>
                     {review.comment && (
-                      <Text className="text-muted text-sm leading-relaxed">
+                      <Text className="text-muted text-sm leading-relaxed mb-2">
                         {review.comment}
                       </Text>
                     )}
+                    <TouchableOpacity
+                      onPress={async () => {
+                        if (!token) { router.push("/(auth)/login"); return; }
+                        const res = await api.post<ApiResponse<{ liked: boolean; likeCount: number }>>(
+                          `/reviews/${review.id}/vote`, {}
+                        ).catch(() => null);
+                        if (res?.data) {
+                          setReviews((prev) => prev.map((r) =>
+                            r.id === review.id
+                              ? { ...r, likedByMe: res.data.liked, likeCount: res.data.likeCount }
+                              : r
+                          ));
+                        }
+                      }}
+                      className="flex-row items-center self-start gap-1"
+                    >
+                      <Text className={`text-sm ${review.likedByMe ? "text-yellow" : "text-muted"}`}>
+                        {review.likedByMe ? "♥" : "♡"}
+                      </Text>
+                      {(review.likeCount ?? 0) > 0 && (
+                        <Text className="text-muted text-[10px]">{review.likeCount}</Text>
+                      )}
+                    </TouchableOpacity>
                   </View>
                 ))
               )}
             </View>
           )}
         </View>
+
+        {/* More from [Promotion] */}
+        {relatedEvents.length > 0 && (
+          <View style={{ paddingBottom: 32 }}>
+            <Text style={{ color: "#6B7280", fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1.2, paddingHorizontal: 16, marginBottom: 12 }}>
+              More from {event.promotion}
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+              {relatedEvents.map((e) => (
+                <TouchableOpacity
+                  key={e.id}
+                  onPress={() => router.push(`/events/${e.slug}`)}
+                  activeOpacity={0.85}
+                  style={{ width: 130, marginRight: 12, borderRadius: 10, overflow: "hidden" }}
+                >
+                  {e.posterUrl ? (
+                    <Image source={{ uri: e.posterUrl }} style={{ width: 130, height: 185 }} contentFit="cover" />
+                  ) : (
+                    <View style={{ width: 130, height: 185, backgroundColor: "#1F2937", alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ color: "#6B7280", fontSize: 10, textAlign: "center", padding: 8 }}>{e.title}</Text>
+                    </View>
+                  )}
+                  <LinearGradient
+                    colors={["transparent", "rgba(11,17,32,0.95)"]}
+                    style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 90 }}
+                  />
+                  <View style={{ position: "absolute", bottom: 8, left: 8, right: 8 }}>
+                    {e.averageRating > 0 && (
+                      <Text style={{ color: "#F5C518", fontSize: 9, fontWeight: "700", marginBottom: 2 }}>★ {e.averageRating.toFixed(1)}</Text>
+                    )}
+                    <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 10, lineHeight: 13 }} numberOfLines={2}>
+                      {e.title}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
       </ScrollView>
 
       {/* Review Modal */}
@@ -767,6 +1062,16 @@ export default function EventDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Watchlist toast */}
+      {toast && (
+        <View
+          style={{ position: "absolute", bottom: 32, left: 24, right: 24, zIndex: 100 }}
+          className="bg-surface border border-border rounded-xl px-4 py-3 items-center shadow-lg"
+        >
+          <Text className="text-white text-sm font-semibold">{toast}</Text>
+        </View>
+      )}
     </>
   );
 }

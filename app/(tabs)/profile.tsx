@@ -10,11 +10,13 @@ import {
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "@/store/auth";
 import { api } from "@/lib/api";
 import { ApiResponse, WatchlistItem, Review } from "@/lib/types";
 import Button from "@/components/Button";
 import EventCard from "@/components/EventCard";
+import Constants from "expo-constants";
 
 type MyReview = {
   id: string;
@@ -68,20 +70,28 @@ export default function ProfileScreen() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [reviews, setReviews] = useState<MyReview[]>([]);
   const [rank, setRank] = useState<{ rank: number | null; total: number } | null>(null);
+  const [followCounts, setFollowCounts] = useState<{ following: number; followers: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"watchlist" | "reviews">("watchlist");
 
   async function fetchData() {
     if (!token) return;
-    const [wl, rv, rk] = await Promise.allSettled([
+    const [wl, rv, rk, fw, fr] = await Promise.allSettled([
       api.get<ApiResponse<WatchlistItem[]>>("/me/watchlist"),
       api.get<ApiResponse<MyReview[]>>("/me/reviews"),
       api.get<ApiResponse<{ rank: number | null; total: number }>>("/me/rank"),
+      api.get<ApiResponse<{ id: string }[]>>("/me/following"),
+      api.get<ApiResponse<{ id: string }[]>>("/me/followers"),
     ]);
     if (wl.status === "fulfilled") setWatchlist(wl.value.data ?? []);
     if (rv.status === "fulfilled") setReviews(rv.value.data ?? []);
     if (rk.status === "fulfilled") setRank(rk.value.data ?? null);
+    const followingCount = fw.status === "fulfilled" ? (fw.value.data ?? []).length : 0;
+    const followersCount = fr.status === "fulfilled" ? (fr.value.data ?? []).length : 0;
+    if (fw.status === "fulfilled" || fr.status === "fulfilled") {
+      setFollowCounts({ following: followingCount, followers: followersCount });
+    }
   }
 
   useEffect(() => {
@@ -157,33 +167,70 @@ export default function ProfileScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F5C518" />
       }
     >
-      {/* Profile header */}
-      <View className="px-4 pt-6 pb-6 items-center">
-        <Avatar url={user.avatarUrl} name={user.name} size={88} />
-        <Text className="text-white text-xl font-black italic mt-3">
-          {(user.name ?? "").toUpperCase()}
-        </Text>
-        <Text className="text-muted text-xs mt-1">@{user.slug}</Text>
-        {user.favoritePromotion && (
-          <View className="mt-2 bg-yellow/10 border border-yellow/30 rounded-md px-3 py-1">
-            <Text className="text-yellow text-xs font-bold">{user.favoritePromotion}</Text>
+      {/* Profile header with gradient */}
+      <View style={{ paddingBottom: 24 }}>
+        <LinearGradient
+          colors={["#1a2540", "#0B1120"]}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+        />
+        <View className="items-center pt-10 pb-2 px-4">
+          {/* Avatar with yellow ring */}
+          <View style={{ width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: "#F5C518", overflow: "hidden", marginBottom: 12 }}>
+            <Avatar url={user.avatarUrl} name={user.name} size={90} />
           </View>
-        )}
-        {rank?.rank != null && (
-          <View className="mt-2 bg-surface border border-border rounded-md px-3 py-1">
-            <Text className="text-muted text-xs">
-              Prediction rank{" "}
-              <Text className="text-white font-bold">#{rank.rank}</Text>
-              <Text className="text-muted"> / {rank.total}</Text>
-            </Text>
-          </View>
-        )}
+          <Text className="text-white text-2xl font-black italic">
+            {(user.name ?? "").toUpperCase()}
+          </Text>
+          <Text className="text-muted text-sm mt-0.5">@{user.slug}</Text>
+          {user.favoritePromotion && (
+            <View className="mt-2 bg-cyan/20 border border-cyan/40 rounded-full px-4 py-1">
+              <Text className="text-cyan text-xs font-bold uppercase tracking-wide">{user.favoritePromotion}</Text>
+            </View>
+          )}
+          {followCounts && (
+            <View className="flex-row gap-6 mt-4">
+              <View className="items-center">
+                <Text className="text-white font-black text-lg">{followCounts.following}</Text>
+                <Text className="text-muted text-[10px] uppercase tracking-wide">Following</Text>
+              </View>
+              <View className="w-px bg-border" />
+              <View className="items-center">
+                <Text className="text-white font-black text-lg">{followCounts.followers}</Text>
+                <Text className="text-muted text-[10px] uppercase tracking-wide">Followers</Text>
+              </View>
+            </View>
+          )}
+        </View>
       </View>
 
+      {/* Stats row — overlaps gradient header */}
+      {!loading && (
+        <View className="flex-row mx-4 mb-4 bg-surface border border-border rounded-xl overflow-hidden" style={{ marginTop: -8 }}>
+          <View className="flex-1 items-center py-3 border-r border-border">
+            <Text className="text-white font-black text-base">{reviews.length}</Text>
+            <Text className="text-muted text-[10px] uppercase tracking-wide">Reviews</Text>
+          </View>
+          <View className="flex-1 items-center py-3 border-r border-border">
+            <Text className="text-white font-black text-base">{watchlist.length}</Text>
+            <Text className="text-muted text-[10px] uppercase tracking-wide">Watchlist</Text>
+          </View>
+          <View className="flex-1 items-center py-3">
+            <Text className="text-white font-black text-base">
+              {rank?.rank != null ? `#${rank.rank}` : "—"}
+            </Text>
+            <Text className="text-muted text-[10px] uppercase tracking-wide">Pred. Rank</Text>
+          </View>
+        </View>
+      )}
+
       {/* Actions */}
-      <View className="px-4 mb-4 gap-3">
-        <Button label="Edit Profile" onPress={() => router.push("/profile/edit")} variant="outline" fullWidth />
-        <Button label="Sign Out" onPress={handleLogout} variant="ghost" fullWidth />
+      <View className="px-4 mb-4 flex-row gap-3">
+        <View style={{ flex: 1 }}>
+          <Button label="Edit Profile" onPress={() => router.push("/profile/edit")} variant="outline" fullWidth />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button label="Sign Out" onPress={handleLogout} variant="ghost" fullWidth />
+        </View>
       </View>
 
       {/* Secondary links */}
@@ -286,6 +333,9 @@ export default function ProfileScreen() {
           )}
         </View>
       )}
+      <Text className="text-muted text-[10px] text-center pb-6 pt-2">
+        v{Constants.expoConfig?.version ?? "—"}
+      </Text>
     </ScrollView>
   );
 }

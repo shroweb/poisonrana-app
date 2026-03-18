@@ -8,36 +8,60 @@ import {
 } from "react-native";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "expo-router";
-import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { RankedEvent, ApiResponse } from "@/lib/types";
+import EventCard from "@/components/EventCard";
 
-const PROMOTIONS = ["All", "WWE", "AEW", "NJPW", "TNA", "ROH"];
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+function SkeletonCard() {
+  return (
+    <View style={{ width: "48%" }} className="bg-surface border border-border rounded-xl overflow-hidden mb-4">
+      <View style={{ height: 130 }} className="bg-subtle" />
+      <View className="p-2">
+        <View className="h-2 bg-subtle rounded w-1/2 mb-2" />
+        <View className="h-3 bg-subtle rounded w-full mb-1.5" />
+        <View className="h-3 bg-subtle rounded w-4/5" />
+      </View>
+    </View>
+  );
 }
 
 export default function RankingsScreen() {
-  const router = useRouter();
   const [events, setEvents] = useState<RankedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [promotion, setPromotion] = useState("All");
+  const [promotions, setPromotions] = useState<string[]>(["All"]);
 
   async function fetchRankings() {
     const params: Record<string, string | number> = { limit: 100 };
     if (promotion !== "All") params.promotion = promotion;
-    const res = await api.get<ApiResponse<RankedEvent[]>>(
-      "/rankings/events",
-      params
-    );
-    setEvents(res.data ?? []);
+
+    let ranked: RankedEvent[] = [];
+    try {
+      const res = await api.get<ApiResponse<RankedEvent[]>>("/rankings/events", params);
+      ranked = res.data ?? [];
+    } catch {}
+
+    if (ranked.length === 0) {
+      try {
+        const res = await api.get<ApiResponse<RankedEvent[]>>("/events", {
+          ...params,
+          upcoming: "false",
+          sort: "rating_desc",
+        });
+        ranked = (res.data ?? []).filter((e) => e.averageRating > 0);
+      } catch {}
+    }
+
+    setEvents(ranked);
   }
+
+  useEffect(() => {
+    api.get<ApiResponse<{ shortName: string }[]>>("/promotions")
+      .then((res) => setPromotions(["All", ...(res.data ?? []).map((p) => p.shortName)]))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -52,116 +76,68 @@ export default function RankingsScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="px-4 pt-4 pb-4">
-        <Text className="text-muted text-xs mb-4">
-          Bayesian weighted community rating
-        </Text>
-
-        {/* Promotion filter */}
-        <FlatList
-          data={PROMOTIONS}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              onPress={() => setPromotion(item)}
-              className={`mr-2 px-4 py-1.5 rounded-full border ${
-                promotion === item
-                  ? "bg-yellow border-yellow"
-                  : "bg-transparent border-border"
-              }`}
-            >
-              <Text
-                className={`text-xs font-bold ${
-                  promotion === item ? "text-black" : "text-muted"
-                }`}
-              >
-                {item}
-              </Text>
-            </TouchableOpacity>
-          )}
-        />
-      </View>
-
       {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#F5C518" size="large" />
+        <View className="flex-row flex-wrap px-4 pt-4 justify-between">
+          {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
         </View>
       ) : (
         <FlatList
           data={events}
+          numColumns={2}
           keyExtractor={(item) => item.id}
-          contentContainerClassName="px-4 pb-8"
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+          columnWrapperStyle={{ justifyContent: "space-between" }}
           showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#F5C518"
-            />
-          }
-          renderItem={({ item, index }) => (
-            <TouchableOpacity
-              onPress={() => router.push(`/events/${item.slug}`)}
-              activeOpacity={0.75}
-              className="flex-row items-center mb-3 bg-surface rounded-xl p-3 border border-border"
-            >
-              {/* Rank number */}
-              <View className="w-9 items-center mr-3">
-                <Text
-                  className={`font-black text-base ${
-                    index === 0
-                      ? "text-yellow"
-                      : index < 3
-                      ? "text-white"
-                      : "text-muted"
-                  }`}
-                >
-                  #{index + 1}
-                </Text>
-              </View>
-
-              {/* Poster */}
-              {item.posterUrl ? (
-                <Image
-                  source={{ uri: item.posterUrl }}
-                  style={{ width: 44, height: 60, borderRadius: 6 }}
-                  contentFit="cover"
-                />
-              ) : (
-                <View
-                  style={{ width: 44, height: 60, borderRadius: 6 }}
-                  className="bg-subtle"
-                />
-              )}
-
-              {/* Info */}
-              <View className="flex-1 ml-3">
-                <Text
-                  className="text-white font-bold text-sm leading-tight"
-                  numberOfLines={2}
-                >
-                  {item.title}
-                </Text>
-                <Text className="text-muted text-xs mt-0.5">
-                  {item.promotion} · {formatDate(item.date)}
-                </Text>
-                <View className="flex-row items-center mt-1.5 gap-3">
-                  <Text className="text-yellow text-xs font-bold">
-                    ★ {item.bayesianScore?.toFixed(3) ?? item.averageRating?.toFixed(2)}
-                  </Text>
-                  <Text className="text-muted text-xs">
-                    {item.reviewCount} reviews
-                  </Text>
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F5C518" />}
+          ListHeaderComponent={
+            <View style={{ paddingTop: 20, paddingBottom: 8 }}>
+              {/* Community Voted badge */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(245,197,24,0.12)", borderWidth: 1, borderColor: "rgba(245,197,24,0.3)", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Ionicons name="trending-up" size={11} color="#F5C518" />
+                  <Text style={{ color: "#F5C518", fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1 }}>Community Voted</Text>
                 </View>
               </View>
-            </TouchableOpacity>
+
+              {/* Title */}
+              <Text style={{ color: "#FFFFFF", fontSize: 32, fontWeight: "900", fontStyle: "italic", lineHeight: 36, marginBottom: 8 }}>
+                {"EVENT\nRANKINGS"}
+              </Text>
+              <Text style={{ color: "#6B7280", fontSize: 13, lineHeight: 18, marginBottom: 20 }}>
+                The definitive community-driven ranking of the greatest professional wrestling events, ordered by Bayesian weighted score.
+              </Text>
+
+              {/* Promotion filter */}
+              <FlatList
+                data={promotions}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(item) => item}
+                style={{ marginHorizontal: -16, marginBottom: 16 }}
+                contentContainerStyle={{ paddingHorizontal: 16 }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    onPress={() => setPromotion(item)}
+                    style={{
+                      marginRight: 8, paddingHorizontal: 16, paddingVertical: 7, borderRadius: 50,
+                      backgroundColor: promotion === item ? "#F5C518" : "transparent",
+                      borderWidth: 1, borderColor: promotion === item ? "#F5C518" : "#1F2937",
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: promotion === item ? "#000" : "#6B7280" }}>
+                      {item}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          }
+          renderItem={({ item, index }) => (
+            <EventCard event={item} rank={index + 1} />
           )}
           ListEmptyComponent={
-            <View className="items-center mt-20">
-              <Text className="text-muted">No ranked events yet.</Text>
+            <View style={{ alignItems: "center", marginTop: 40 }}>
+              <Text style={{ color: "#6B7280" }}>No ranked events yet.</Text>
             </View>
           }
         />

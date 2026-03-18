@@ -2,15 +2,21 @@ import {
   View,
   Text,
   ScrollView,
+  TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
+import { useEffect, useState, useRef } from "react";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/lib/api";
 import { Event, Match, ApiResponse } from "@/lib/types";
 import { useAuth } from "@/store/auth";
+import ViewShot from "react-native-view-shot";
+import * as MediaLibrary from "expo-media-library";
+import * as Sharing from "expo-sharing";
+import ShareCard from "@/components/ShareCard";
 
 type MyPrediction = { matchId: string; predictedWinnerId: string };
 
@@ -167,11 +173,50 @@ function PredictionMatchCard({
 export default function PredictionResultsScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const router = useRouter();
-  const { token } = useAuth();
+  const navigation = useNavigation();
+  const { token, user } = useAuth();
 
   const [event, setEvent] = useState<Event | null>(null);
   const [myPredictions, setMyPredictions] = useState<MyPrediction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const shareRef = useRef<ViewShot>(null);
+
+  useEffect(() => {
+    fetch("https://www.poisonrana.com/api/v1/config")
+      .then((r) => r.json())
+      .then((j) => setLogoUrl(j.data?.logoUrl ?? null))
+      .catch(() => {});
+  }, []);
+
+  async function handleShare() {
+    try {
+      const uri = await (shareRef.current as any).capture();
+      Alert.alert("Share Predictions", "", [
+        {
+          text: "Save to Photos",
+          onPress: async () => {
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status === "granted") {
+              await MediaLibrary.saveToLibraryAsync(uri);
+              Alert.alert("Saved", "Image saved to your photo library.");
+            }
+          },
+        },
+        {
+          text: "Share",
+          onPress: async () => {
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share Predictions" });
+            }
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    } catch {
+      Alert.alert("Error", "Could not generate share image.");
+    }
+  }
 
   useEffect(() => {
     const eventSlug = Array.isArray(slug) ? slug[0] : slug;
@@ -250,7 +295,7 @@ export default function PredictionResultsScreen() {
             {/* Score summary */}
             {hasResults && totalPredicted > 0 && (
               <View className="bg-surface border border-border rounded-xl p-4 mb-5 flex-row items-center justify-between">
-                <View>
+                <View className="flex-1">
                   <Text className="text-muted text-xs uppercase tracking-wider font-semibold mb-1">
                     Your Score
                   </Text>
@@ -261,22 +306,27 @@ export default function PredictionResultsScreen() {
                     </Text>
                   </Text>
                 </View>
-                <View
-                  className={`rounded-full w-14 h-14 items-center justify-center border ${
-                    correct / totalPredicted >= 0.5
-                      ? "bg-green-500/10 border-green-500/30"
-                      : "bg-red-500/10 border-red-500/30"
-                  }`}
-                >
-                  <Text
-                    className={`text-lg font-black ${
+                <View className="flex-row items-center gap-3">
+                  <TouchableOpacity onPress={handleShare} className="bg-yellow/10 border border-yellow/30 rounded-full w-10 h-10 items-center justify-center">
+                    <Ionicons name="share-outline" size={18} color="#F5C518" />
+                  </TouchableOpacity>
+                  <View
+                    className={`rounded-full w-14 h-14 items-center justify-center border ${
                       correct / totalPredicted >= 0.5
-                        ? "text-green-500"
-                        : "text-red-500"
+                        ? "bg-green-500/10 border-green-500/30"
+                        : "bg-red-500/10 border-red-500/30"
                     }`}
                   >
-                    {Math.round((correct / totalPredicted) * 100)}%
-                  </Text>
+                    <Text
+                      className={`text-lg font-black ${
+                        correct / totalPredicted >= 0.5
+                          ? "text-green-500"
+                          : "text-red-500"
+                      }`}
+                    >
+                      {Math.round((correct / totalPredicted) * 100)}%
+                    </Text>
+                  </View>
                 </View>
               </View>
             )}
@@ -304,6 +354,20 @@ export default function PredictionResultsScreen() {
           </>
         )}
       </View>
+      {/* Hidden share card for capture */}
+      {event && (
+        <ViewShot ref={shareRef} options={{ format: "png", quality: 1 }} style={{ position: "absolute", left: -1000, top: -1000 }}>
+          <ShareCard
+            variant="event"
+            username={user?.name ?? user?.email ?? "fan"}
+            correct={correct}
+            total={totalPredicted}
+            logoUrl={logoUrl}
+            eventName={event.title}
+            posterUrl={event.posterUrl}
+          />
+        </ViewShot>
+      )}
     </ScrollView>
   );
 }

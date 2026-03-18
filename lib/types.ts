@@ -94,6 +94,8 @@ export interface Review {
   comment?: string;
   user: Pick<User, "id" | "name" | "slug" | "avatarUrl">;
   createdAt: string;
+  likeCount?: number;
+  likedByMe?: boolean;
 }
 
 export interface WatchlistItem {

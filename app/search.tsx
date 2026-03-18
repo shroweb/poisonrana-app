@@ -138,20 +138,29 @@ export default function SearchScreen() {
                 Fans
               </Text>
               {results.users.map((u) => (
-                <View
+                <TouchableOpacity
                   key={u.id}
+                  onPress={() => router.push(`/users/${u.slug}`)}
                   className="flex-row items-center bg-surface border border-border rounded-xl p-3 mb-2"
                 >
-                  <View className="w-10 h-10 rounded-full bg-yellow items-center justify-center">
-                    <Text className="text-black font-black text-sm">
-                      {u.name[0].toUpperCase()}
-                    </Text>
-                  </View>
+                  {u.avatarUrl ? (
+                    <Image
+                      source={{ uri: u.avatarUrl }}
+                      style={{ width: 40, height: 40, borderRadius: 20 }}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View className="w-10 h-10 rounded-full bg-yellow items-center justify-center">
+                      <Text className="text-black font-black text-sm">
+                        {u.name[0].toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
                   <View className="ml-3">
                     <Text className="text-white font-bold text-sm">{u.name}</Text>
                     <Text className="text-muted text-xs">@{u.slug}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
