@@ -47,7 +47,15 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#F5C518",
+          "sounds": []
+        }
+      ]
     ],
     "install": {
       "exclude": ["react-native-reanimated"]

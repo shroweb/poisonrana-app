@@ -1,15 +1,72 @@
 import "../global.css";
-import { useEffect } from "react";
-import { Stack } from "expo-router";
+import { useEffect, useRef } from "react";
+import { Platform } from "react-native";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useAuth } from "@/store/auth";
+import { api } from "@/lib/api";
+
+let Notifications: typeof import("expo-notifications") | null = null;
+try { Notifications = require("expo-notifications"); } catch {}
+
+if (Notifications) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: true }),
+  });
+}
+
+async function registerPushToken(token: string) {
+  const platform = Platform.OS === "ios" ? "ios" : "android";
+  try {
+    await api.post("/me/push-token", { token, platform });
+  } catch {}
+}
 
 export default function RootLayout() {
   const hydrate = useAuth((s) => s.hydrate);
+  const authToken = useAuth((s) => s.token);
+  const router = useRouter();
+  const notificationListener = useRef<any>(null);
+  const responseListener = useRef<any>(null);
 
   useEffect(() => {
     hydrate();
   }, []);
+
+  useEffect(() => {
+    if (!Notifications || !authToken) return;
+
+    async function setupPush() {
+      try {
+        const { status: existing } = await Notifications!.getPermissionsAsync();
+        let finalStatus = existing;
+        if (existing !== "granted") {
+          const { status } = await Notifications!.requestPermissionsAsync();
+          finalStatus = status;
+        }
+        if (finalStatus !== "granted") return;
+
+        const tokenData = await Notifications!.getExpoPushTokenAsync({
+          projectId: "5ef12ebe-7942-46ec-9164-3fd8441a5e3d",
+        });
+        await registerPushToken(tokenData.data);
+      } catch {}
+    }
+
+    setupPush();
+
+    // Handle notification taps
+    responseListener.current = Notifications!.addNotificationResponseReceivedListener((response) => {
+      const path = response.notification.request.content.data?.path as string | undefined;
+      if (path && path.startsWith("/")) {
+        router.push(path as any);
+      }
+    });
+
+    return () => {
+      if (responseListener.current) Notifications!.removeNotificationSubscription(responseListener.current);
+    };
+  }, [authToken]);
 
   return (
     <>
@@ -48,6 +105,10 @@ export default function RootLayout() {
         <Stack.Screen
           name="predictions/[slug]"
           options={{ title: "My Predictions", headerBackTitle: "Back" }}
+        />
+        <Stack.Screen
+          name="leaderboard"
+          options={{ title: "Leaderboard", headerBackTitle: "Back" }}
         />
       </Stack>
     </>

@@ -105,3 +105,30 @@ export interface WatchlistItem {
   watched?: boolean;
   attended?: boolean;
 }
+
+export interface LeaderboardUser {
+  id: string;
+  name: string;
+  slug: string;
+  avatarUrl: string | null;
+  favoritePromotion: string | null;
+  reviewCount: number;
+  ratingCount: number;
+  predictionScore: number;
+  score: number;
+}
+
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: number;
+}
+
+export interface Poll {
+  id: string;
+  question: string;
+  endsAt: string | null;
+  totalVotes: number;
+  userVote: string | null;
+  options: PollOption[];
+}

@@ -15,8 +15,9 @@ import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/lib/api";
-import { Event, ApiResponse } from "@/lib/types";
+import { Event, Poll, ApiResponse } from "@/lib/types";
 import EventCard from "@/components/EventCard";
+import { useAuth } from "@/store/auth";
 
 const { width } = Dimensions.get("window");
 const CARD_W = width - 32;
@@ -103,6 +104,46 @@ function FeaturedCarousel({ events }: { events: Event[] }) {
   );
 }
 
+function PollCard({ poll, onVote }: { poll: Poll; onVote: (optionId: string) => void }) {
+  const totalVotes = poll.totalVotes || poll.options.reduce((s, o) => s + o.votes, 0);
+  return (
+    <View style={{ backgroundColor: "#111827", borderWidth: 1, borderColor: "#1F2937", borderRadius: 16, padding: 16, marginBottom: 16 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <View style={{ backgroundColor: "rgba(245,197,24,0.12)", borderWidth: 1, borderColor: "rgba(245,197,24,0.3)", borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3 }}>
+          <Text style={{ color: "#F5C518", fontSize: 9, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1 }}>Community Poll</Text>
+        </View>
+        {totalVotes > 0 && (
+          <Text style={{ color: "#6B7280", fontSize: 10 }}>{totalVotes} votes</Text>
+        )}
+      </View>
+      <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 15, marginBottom: 12, lineHeight: 20 }}>{poll.question}</Text>
+      {poll.options.map((opt) => {
+        const pct = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
+        const isVoted = poll.userVote === opt.id;
+        return (
+          <TouchableOpacity
+            key={opt.id}
+            onPress={() => onVote(opt.id)}
+            style={{ marginBottom: 8, borderRadius: 8, overflow: "hidden", borderWidth: 1, borderColor: isVoted ? "#F5C518" : "#1F2937" }}
+            activeOpacity={0.8}
+          >
+            {/* Progress fill */}
+            {poll.userVote && (
+              <View style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: `${pct}%`, backgroundColor: isVoted ? "rgba(245,197,24,0.15)" : "rgba(255,255,255,0.04)" }} />
+            )}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10 }}>
+              <Text style={{ color: isVoted ? "#F5C518" : "#D1D5DB", fontWeight: isVoted ? "700" : "500", fontSize: 13, flex: 1 }}>{opt.text}</Text>
+              {poll.userVote && (
+                <Text style={{ color: isVoted ? "#F5C518" : "#6B7280", fontWeight: "700", fontSize: 12, marginLeft: 8 }}>{pct}%</Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 function SkeletonCard() {
   return (
     <View style={{ width: "48%" }} className="bg-surface border border-border rounded-xl overflow-hidden mb-4">
@@ -117,6 +158,7 @@ function SkeletonCard() {
 }
 
 export default function EventsScreen() {
+  const { token } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -124,6 +166,7 @@ export default function EventsScreen() {
   const [promotion, setPromotion] = useState("All");
   const [promotions, setPromotions] = useState<string[]>(["All"]);
   const [featuredEvents, setFeaturedEvents] = useState<Event[]>([]);
+  const [activePoll, setActivePoll] = useState<Poll | null>(null);
 
   useEffect(() => {
     api.get<ApiResponse<{ shortName: string }[]>>("/promotions")
@@ -138,7 +181,23 @@ export default function EventsScreen() {
         setFeaturedEvents(withPosters);
       })
       .catch(() => {});
+    api.get<ApiResponse<Poll[]>>("/polls")
+      .then((res) => setActivePoll((res.data ?? [])[0] ?? null))
+      .catch(() => {});
   }, []);
+
+  async function handlePollVote(optionId: string) {
+    if (!activePoll) return;
+    try {
+      const res = await api.post<{ data: { userVote: string | null; totalVotes: number; options: Poll["options"] } }>(
+        `/polls/${activePoll.id}/vote`,
+        { optionId }
+      );
+      if (res.data) {
+        setActivePoll((p) => p ? { ...p, userVote: res.data.userVote, totalVotes: res.data.totalVotes, options: res.data.options } : p);
+      }
+    } catch {}
+  }
   const [view, setView] = useState<"upcoming" | "past">("past");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -268,19 +327,28 @@ export default function EventsScreen() {
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           ListHeaderComponent={
-            view === "past" && featuredEvents.length > 0 ? (
-              <View style={{ paddingTop: 4, paddingBottom: 8 }}>
-                <Text style={{ color: "#6B7280", fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
-                  Featured
-                </Text>
-                <View style={{ marginHorizontal: -16 }}>
-                  <FeaturedCarousel events={featuredEvents} />
+            <View style={{ paddingTop: 4, paddingBottom: 8 }}>
+              {view === "past" && featuredEvents.length > 0 && (
+                <>
+                  <Text style={{ color: "#6B7280", fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
+                    Featured
+                  </Text>
+                  <View style={{ marginHorizontal: -16 }}>
+                    <FeaturedCarousel events={featuredEvents} />
+                  </View>
+                </>
+              )}
+              {activePoll && (
+                <View style={{ marginTop: 16 }}>
+                  <PollCard poll={activePoll} onVote={handlePollVote} />
                 </View>
-                <Text style={{ color: "#6B7280", fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1.2, marginTop: 16, marginBottom: 4 }}>
+              )}
+              {(view === "past" && featuredEvents.length > 0) || activePoll ? (
+                <Text style={{ color: "#6B7280", fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1.2, marginTop: activePoll ? 0 : 16, marginBottom: 4 }}>
                   All Events
                 </Text>
-              </View>
-            ) : null
+              ) : null}
+            </View>
           }
           renderItem={({ item }) => <EventCard event={item} />}
           ListEmptyComponent={
