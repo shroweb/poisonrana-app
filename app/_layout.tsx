@@ -3,17 +3,13 @@ import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as Notifications from "expo-notifications";
 import { useAuth } from "@/store/auth";
 import { api } from "@/lib/api";
 
-let Notifications: typeof import("expo-notifications") | null = null;
-try { Notifications = require("expo-notifications"); } catch {}
-
-if (Notifications) {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: true }),
-  });
-}
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: true }),
+});
 
 async function registerPushToken(token: string) {
   const platform = Platform.OS === "ios" ? "ios" : "android";
@@ -34,29 +30,30 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!Notifications || !authToken) return;
+    if (!authToken) return;
 
     async function setupPush() {
       try {
-        const { status: existing } = await Notifications!.getPermissionsAsync();
+        const { status: existing } = await Notifications.getPermissionsAsync();
         let finalStatus = existing;
         if (existing !== "granted") {
-          const { status } = await Notifications!.requestPermissionsAsync();
+          const { status } = await Notifications.requestPermissionsAsync();
           finalStatus = status;
         }
         if (finalStatus !== "granted") return;
 
-        const tokenData = await Notifications!.getExpoPushTokenAsync({
+        const tokenData = await Notifications.getExpoPushTokenAsync({
           projectId: "5ef12ebe-7942-46ec-9164-3fd8441a5e3d",
         });
         await registerPushToken(tokenData.data);
-      } catch {}
+      } catch (e) {
+        console.log("[push] setup failed:", e);
+      }
     }
 
     setupPush();
 
-    // Handle notification taps
-    responseListener.current = Notifications!.addNotificationResponseReceivedListener((response) => {
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const path = response.notification.request.content.data?.path as string | undefined;
       if (path && path.startsWith("/")) {
         router.push(path as any);
@@ -64,7 +61,7 @@ export default function RootLayout() {
     });
 
     return () => {
-      if (responseListener.current) Notifications!.removeNotificationSubscription(responseListener.current);
+      if (responseListener.current) Notifications.removeNotificationSubscription(responseListener.current);
     };
   }, [authToken]);
 
