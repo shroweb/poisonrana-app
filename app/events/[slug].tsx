@@ -194,6 +194,7 @@ export default function EventDetailScreen() {
 
   // Watchlist
   const [inWatchlist, setInWatchlist] = useState(false);
+  const [watchStatus, setWatchStatus] = useState<"none" | "watched" | "attended">("none");
   const [togglingWatchlist, setTogglingWatchlist] = useState(false);
 
   // Predictions: matchId -> chosen participantId (local + fetched)
@@ -238,11 +239,15 @@ export default function EventDetailScreen() {
         }
         if (ev && token) {
           api
-            .get<ApiResponse<{ event: { id: string } }[]>>("/me/watchlist", { limit: 200 })
+            .get<ApiResponse<{ event: { id: string }; watched?: boolean; attended?: boolean }[]>>("/me/watchlist", { limit: 200 })
             .then((wRes) => {
               if (cancelled) return;
               const items = wRes.data ?? [];
-              setInWatchlist(items.some((item) => item.event.id === ev.id));
+              const found = items.find((item) => item.event.id === ev.id);
+              setInWatchlist(!!found);
+              if (found) {
+                setWatchStatus(found.attended ? "attended" : found.watched ? "watched" : "none");
+              }
             })
             .catch(() => {});
         }
@@ -371,6 +376,7 @@ export default function EventDetailScreen() {
       if (inWatchlist) {
         await api.delete("/me/watchlist", { eventId: event.id });
         setInWatchlist(false);
+        setWatchStatus("none");
         setToast("Removed from watchlist");
       } else {
         await api.post("/me/watchlist", { eventId: event.id });
@@ -382,6 +388,37 @@ export default function EventDetailScreen() {
       Alert.alert("Error", "Failed to update watchlist.");
     } finally {
       setTogglingWatchlist(false);
+    }
+  }
+
+  async function updateWatchStatus(status: "watched" | "attended") {
+    if (!event) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const isToggleOff = watchStatus === status;
+      if (isToggleOff) {
+        // Step back: attended→watched, watched→none
+        if (status === "attended") {
+          await api.patch("/me/watchlist", { eventId: event.id, attended: false });
+          setWatchStatus("watched");
+          setToast("Marked as watched");
+        } else {
+          await api.patch("/me/watchlist", { eventId: event.id, watched: false });
+          setWatchStatus("none");
+          setToast("Back to watchlist");
+        }
+      } else {
+        await api.patch("/me/watchlist", {
+          eventId: event.id,
+          watched: true,
+          ...(status === "attended" ? { attended: true } : { attended: false }),
+        });
+        setWatchStatus(status);
+        setToast(status === "attended" ? "Marked as attended!" : "Marked as watched!");
+      }
+      setTimeout(() => setToast(null), 2000);
+    } catch {
+      Alert.alert("Error", "Failed to update status.");
     }
   }
 
@@ -543,18 +580,36 @@ export default function EventDetailScreen() {
           <TouchableOpacity
             onPress={toggleWatchlist}
             disabled={togglingWatchlist}
-            className={`flex-row items-center justify-center border rounded-xl py-3 mb-4 ${
-              inWatchlist ? "border-yellow bg-yellow/10" : "border-border"
-            }`}
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 12, paddingVertical: 12, marginBottom: inWatchlist ? 8 : 16, borderColor: inWatchlist ? "#F5C518" : "#1F2937", backgroundColor: inWatchlist ? "rgba(245,197,24,0.08)" : "transparent" }}
           >
             {togglingWatchlist ? (
               <ActivityIndicator size="small" color="#F5C518" />
             ) : (
-              <Text className={`text-sm font-bold uppercase tracking-wide ${inWatchlist ? "text-yellow" : "text-muted"}`}>
-                {inWatchlist ? "★ In Watchlist" : "+ Add to Watchlist"}
+              <Text style={{ fontSize: 12, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.8, color: inWatchlist ? "#F5C518" : "#6B7280" }}>
+                {inWatchlist ? "★ In Watchlist — tap to remove" : "+ Add to Watchlist"}
               </Text>
             )}
           </TouchableOpacity>
+
+          {/* Watch status buttons (shown when in watchlist) */}
+          {inWatchlist && (
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
+              <TouchableOpacity
+                onPress={() => updateWatchStatus("watched")}
+                style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderRadius: 10, paddingVertical: 9, borderColor: watchStatus === "watched" || watchStatus === "attended" ? "#F5C518" : "#1F2937", backgroundColor: watchStatus === "watched" || watchStatus === "attended" ? "rgba(245,197,24,0.12)" : "transparent" }}
+              >
+                <Text style={{ fontSize: 14 }}>{watchStatus === "watched" || watchStatus === "attended" ? "✓" : "○"}</Text>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: watchStatus === "watched" || watchStatus === "attended" ? "#F5C518" : "#6B7280" }}>Watched</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => updateWatchStatus("attended")}
+                style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderRadius: 10, paddingVertical: 9, borderColor: watchStatus === "attended" ? "#22d3ee" : "#1F2937", backgroundColor: watchStatus === "attended" ? "rgba(34,211,238,0.12)" : "transparent" }}
+              >
+                <Text style={{ fontSize: 14 }}>{watchStatus === "attended" ? "✓" : "○"}</Text>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: watchStatus === "attended" ? "#22d3ee" : "#6B7280" }}>Attended</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Review button */}
           {hasEnded && (

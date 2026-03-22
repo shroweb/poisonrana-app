@@ -155,15 +155,6 @@ export default function ProfileScreen() {
     setWatchlist((prev) => prev.filter((w) => w.event.id !== eventId));
   }
 
-  async function updateWatchStatus(eventId: string, field: "watched" | "attended", value: boolean) {
-    await api.patch("/me/watchlist", { eventId, [field]: value });
-    setWatchlist((prev) =>
-      prev.map((w) =>
-        w.event.id === eventId ? { ...w, [field]: value, ...(field === "attended" && value ? { watched: true } : {}) } : w
-      )
-    );
-  }
-
   const wantItems = watchlist.filter((w) => !w.watched && !w.attended);
   const watchedItems = watchlist.filter((w) => w.watched && !w.attended);
   const attendedItems = watchlist.filter((w) => w.attended);
@@ -338,31 +329,12 @@ export default function ProfileScreen() {
               {watchTabItems.map((item) => (
                 <View key={item.id} className="relative">
                   <EventCard event={item.event} />
-                  {/* Status actions */}
-                  <View style={{ position: "absolute", bottom: 10, left: 8, right: 8, flexDirection: "row", gap: 4 }}>
-                    {watchTab === "want" && (
-                      <TouchableOpacity
-                        onPress={() => updateWatchStatus(item.event.id, "watched", true)}
-                        style={{ flex: 1, backgroundColor: "rgba(245,197,24,0.9)", borderRadius: 6, paddingVertical: 4, alignItems: "center" }}
-                      >
-                        <Text style={{ color: "#000", fontSize: 9, fontWeight: "800" }}>MARK WATCHED</Text>
-                      </TouchableOpacity>
-                    )}
-                    {watchTab === "watched" && (
-                      <TouchableOpacity
-                        onPress={() => updateWatchStatus(item.event.id, "attended", true)}
-                        style={{ flex: 1, backgroundColor: "rgba(34,211,238,0.9)", borderRadius: 6, paddingVertical: 4, alignItems: "center" }}
-                      >
-                        <Text style={{ color: "#000", fontSize: 9, fontWeight: "800" }}>MARK ATTENDED</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      onPress={() => removeFromWatchlist(item.event.id)}
-                      style={{ backgroundColor: "rgba(0,0,0,0.7)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, alignItems: "center" }}
-                    >
-                      <Ionicons name="trash-outline" size={11} color="#9CA3AF" />
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    onPress={() => removeFromWatchlist(item.event.id)}
+                    style={{ position: "absolute", top: 8, right: 8, backgroundColor: "rgba(0,0,0,0.7)", borderRadius: 14, width: 24, height: 24, alignItems: "center", justifyContent: "center" }}
+                  >
+                    <Ionicons name="close" size={13} color="#9CA3AF" />
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>
@@ -409,33 +381,51 @@ export default function ProfileScreen() {
               <Text className="text-muted text-center">No predictions made yet.</Text>
             </View>
           ) : (
-            predictions.map((pred) => {
-              const accuracy = pred.total > 0 ? Math.round((pred.correct / pred.total) * 100) : null;
-              return (
-                <TouchableOpacity
-                  key={pred.eventId}
-                  onPress={() => router.push(`/predictions/${pred.slug}`)}
-                  className="bg-surface border border-border rounded-xl p-4 mb-3 flex-row items-center justify-between"
-                >
-                  <View className="flex-1">
-                    <Text className="text-white font-bold text-sm">{pred.slug.replace(/-/g, " ").toUpperCase()}</Text>
-                    <Text className="text-muted text-xs mt-0.5">
-                      {pred.correct}/{pred.total} correct
-                    </Text>
-                  </View>
-                  {accuracy !== null ? (
-                    <View style={{ alignItems: "center" }}>
-                      <Text style={{ color: accuracy >= 60 ? "#22d3ee" : accuracy >= 40 ? "#F5C518" : "#9CA3AF", fontWeight: "900", fontSize: 18 }}>
-                        {accuracy}%
-                      </Text>
-                      <Text className="text-muted text-[9px] uppercase tracking-wide">Accuracy</Text>
-                    </View>
-                  ) : (
-                    <Text className="text-muted text-xs">Pending</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })
+            <>
+              {/* Settled predictions */}
+              {predictions.filter((p) => p.total > 0).length > 0 && (
+                <>
+                  <Text style={{ color: "#6B7280", fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>Results In</Text>
+                  {predictions.filter((p) => p.total > 0).map((pred) => {
+                    const accuracy = Math.round((pred.correct / pred.total) * 100);
+                    return (
+                      <TouchableOpacity
+                        key={pred.eventId}
+                        onPress={() => router.push(`/predictions/${pred.slug}`)}
+                        className="bg-surface border border-border rounded-xl p-4 mb-3 flex-row items-center justify-between"
+                      >
+                        <View className="flex-1 mr-3">
+                          <Text className="text-white font-bold text-sm" numberOfLines={1}>{pred.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</Text>
+                          <Text className="text-muted text-xs mt-0.5">{pred.correct}/{pred.total} correct</Text>
+                        </View>
+                        <View style={{ alignItems: "center" }}>
+                          <Text style={{ color: accuracy >= 60 ? "#22d3ee" : accuracy >= 40 ? "#F5C518" : "#9CA3AF", fontWeight: "900", fontSize: 20 }}>
+                            {accuracy}%
+                          </Text>
+                          <Text className="text-muted text-[9px] uppercase tracking-wide">Accuracy</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+              {/* Pending predictions */}
+              {predictions.filter((p) => p.total === 0).length > 0 && (
+                <>
+                  <Text style={{ color: "#6B7280", fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 1.2, marginTop: 8, marginBottom: 8 }}>Pending Results</Text>
+                  {predictions.filter((p) => p.total === 0).map((pred) => (
+                    <TouchableOpacity
+                      key={pred.eventId}
+                      onPress={() => router.push(`/predictions/${pred.slug}`)}
+                      className="bg-surface border border-border rounded-xl p-4 mb-3 flex-row items-center justify-between"
+                    >
+                      <Text className="text-white font-bold text-sm flex-1" numberOfLines={1}>{pred.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</Text>
+                      <Text className="text-muted text-xs">Pending</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+            </>
           )}
         </View>
       )}
