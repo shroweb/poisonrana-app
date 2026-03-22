@@ -10,10 +10,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  Share,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import ViewShot from "react-native-view-shot";
+import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -197,6 +198,9 @@ export default function EventDetailScreen() {
   const [watchStatus, setWatchStatus] = useState<"none" | "watched" | "attended">("none");
   const [togglingWatchlist, setTogglingWatchlist] = useState(false);
 
+  // Share
+  const shareRef = useRef<ViewShot>(null);
+
   // Predictions: matchId -> chosen participantId (local + fetched)
   const [predictions, setPredictions] = useState<Record<string, string>>({});
   const [submittingPrediction, setSubmittingPrediction] = useState<string | null>(null);
@@ -257,18 +261,21 @@ export default function EventDetailScreen() {
     return () => { cancelled = true; };
   }, [slug]);
 
+  async function handleShare() {
+    try {
+      const uri = await (shareRef.current as any).capture();
+      await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share Event" });
+    } catch {
+      Alert.alert("Error", "Could not generate share image.");
+    }
+  }
+
   useEffect(() => {
     if (!event) return;
-    const eventSlug = Array.isArray(slug) ? slug[0] : slug;
     navigation.setOptions({
       headerRight: () => (
         <TouchableOpacity
-          onPress={() =>
-            Share.share({
-              url: `https://poisonrana.com/events/${eventSlug}`,
-              message: event.title,
-            })
-          }
+          onPress={handleShare}
           style={{ marginRight: 8, width: 34, height: 34, alignItems: "center", justifyContent: "center" }}
         >
           <Ionicons name="share-outline" size={20} color="#FFFFFF" />
@@ -393,19 +400,22 @@ export default function EventDetailScreen() {
 
   async function updateWatchStatus(status: "watched" | "attended") {
     if (!event) return;
+    if (!token) { router.push("/(auth)/login"); return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
+      // Auto-add to watchlist if not already in it
+      if (!inWatchlist) {
+        await api.post("/me/watchlist", { eventId: event.id });
+        setInWatchlist(true);
+      }
       const isToggleOff = watchStatus === status;
       if (isToggleOff) {
-        // Step back: attended→watched, watched→none
         if (status === "attended") {
           await api.patch("/me/watchlist", { eventId: event.id, attended: false });
           setWatchStatus("watched");
-          setToast("Marked as watched");
         } else {
           await api.patch("/me/watchlist", { eventId: event.id, watched: false });
           setWatchStatus("none");
-          setToast("Back to watchlist");
         }
       } else {
         await api.patch("/me/watchlist", {
@@ -415,8 +425,8 @@ export default function EventDetailScreen() {
         });
         setWatchStatus(status);
         setToast(status === "attended" ? "Marked as attended!" : "Marked as watched!");
+        setTimeout(() => setToast(null), 2000);
       }
-      setTimeout(() => setToast(null), 2000);
     } catch {
       Alert.alert("Error", "Failed to update status.");
     }
@@ -576,40 +586,37 @@ export default function EventDetailScreen() {
             </Text>
           )}
 
-          {/* Watchlist button */}
-          <TouchableOpacity
-            onPress={toggleWatchlist}
-            disabled={togglingWatchlist}
-            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 12, paddingVertical: 12, marginBottom: inWatchlist ? 8 : 16, borderColor: inWatchlist ? "#F5C518" : "#1F2937", backgroundColor: inWatchlist ? "rgba(245,197,24,0.08)" : "transparent" }}
-          >
-            {togglingWatchlist ? (
-              <ActivityIndicator size="small" color="#F5C518" />
-            ) : (
-              <Text style={{ fontSize: 12, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.8, color: inWatchlist ? "#F5C518" : "#6B7280" }}>
-                {inWatchlist ? "★ In Watchlist — tap to remove" : "+ Add to Watchlist"}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          {/* Watch status buttons (shown when in watchlist) */}
-          {inWatchlist && (
-            <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-              <TouchableOpacity
-                onPress={() => updateWatchStatus("watched")}
-                style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderRadius: 10, paddingVertical: 9, borderColor: watchStatus === "watched" || watchStatus === "attended" ? "#F5C518" : "#1F2937", backgroundColor: watchStatus === "watched" || watchStatus === "attended" ? "rgba(245,197,24,0.12)" : "transparent" }}
-              >
-                <Text style={{ fontSize: 14 }}>{watchStatus === "watched" || watchStatus === "attended" ? "✓" : "○"}</Text>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: watchStatus === "watched" || watchStatus === "attended" ? "#F5C518" : "#6B7280" }}>Watched</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => updateWatchStatus("attended")}
-                style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderRadius: 10, paddingVertical: 9, borderColor: watchStatus === "attended" ? "#22d3ee" : "#1F2937", backgroundColor: watchStatus === "attended" ? "rgba(34,211,238,0.12)" : "transparent" }}
-              >
-                <Text style={{ fontSize: 14 }}>{watchStatus === "attended" ? "✓" : "○"}</Text>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: watchStatus === "attended" ? "#22d3ee" : "#6B7280" }}>Attended</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          {/* Watchlist / Watched / Attended — 3 peer icon buttons */}
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
+            <TouchableOpacity
+              onPress={toggleWatchlist}
+              disabled={togglingWatchlist}
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderRadius: 10, paddingVertical: 10, borderColor: inWatchlist ? "#F5C518" : "#1F2937", backgroundColor: inWatchlist ? "rgba(245,197,24,0.1)" : "transparent" }}
+            >
+              {togglingWatchlist ? (
+                <ActivityIndicator size="small" color="#F5C518" />
+              ) : (
+                <>
+                  <Ionicons name={inWatchlist ? "bookmark" : "bookmark-outline"} size={14} color={inWatchlist ? "#F5C518" : "#6B7280"} />
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: inWatchlist ? "#F5C518" : "#6B7280" }}>List</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => updateWatchStatus("watched")}
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderRadius: 10, paddingVertical: 10, borderColor: (watchStatus === "watched" || watchStatus === "attended") ? "#22c55e" : "#1F2937", backgroundColor: (watchStatus === "watched" || watchStatus === "attended") ? "rgba(34,197,94,0.1)" : "transparent" }}
+            >
+              <Ionicons name={(watchStatus === "watched" || watchStatus === "attended") ? "eye" : "eye-outline"} size={14} color={(watchStatus === "watched" || watchStatus === "attended") ? "#22c55e" : "#6B7280"} />
+              <Text style={{ fontSize: 11, fontWeight: "700", color: (watchStatus === "watched" || watchStatus === "attended") ? "#22c55e" : "#6B7280" }}>Watched</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => updateWatchStatus("attended")}
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderRadius: 10, paddingVertical: 10, borderColor: watchStatus === "attended" ? "#22d3ee" : "#1F2937", backgroundColor: watchStatus === "attended" ? "rgba(34,211,238,0.1)" : "transparent" }}
+            >
+              <Ionicons name={watchStatus === "attended" ? "location" : "location-outline"} size={14} color={watchStatus === "attended" ? "#22d3ee" : "#6B7280"} />
+              <Text style={{ fontSize: 11, fontWeight: "700", color: watchStatus === "attended" ? "#22d3ee" : "#6B7280" }}>Attended</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Review button */}
           {hasEnded && (
@@ -1117,6 +1124,45 @@ export default function EventDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Hidden share card for image capture */}
+      <ViewShot ref={shareRef} options={{ format: "png", quality: 1 }} style={{ position: "absolute", left: -1000, top: -1000 }}>
+        <View style={{ width: 320, height: 480, borderRadius: 20, overflow: "hidden" }}>
+          {event.posterUrl ? (
+            <Image source={{ uri: event.posterUrl }} style={{ position: "absolute", width: 320, height: 480 }} contentFit="cover" />
+          ) : (
+            <LinearGradient colors={["#0d1b4b", "#0B1120"]} style={{ position: "absolute", width: 320, height: 480 }} />
+          )}
+          <LinearGradient
+            colors={["rgba(11,17,32,0.2)", "rgba(11,17,32,0.65)", "rgba(11,17,32,0.97)"]}
+            locations={[0, 0.5, 1]}
+            style={{ position: "absolute", width: 320, height: 480 }}
+          />
+          <View style={{ flex: 1, padding: 28, justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <View style={{ backgroundColor: "rgba(34,211,238,0.15)", borderWidth: 1, borderColor: "rgba(34,211,238,0.4)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text style={{ color: "#22d3ee", fontSize: 9, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1 }}>
+                  {event.promotion}
+                </Text>
+              </View>
+            </View>
+            <View>
+              <Text style={{ color: "#FFFFFF", fontSize: 26, fontWeight: "900", fontStyle: "italic", lineHeight: 30, marginBottom: 8 }}>
+                {event.title.toUpperCase()}
+              </Text>
+              <Text style={{ color: "#9CA3AF", fontSize: 12 }}>{formatDate(event.date)}</Text>
+              {event.averageRating > 0 && (
+                <Text style={{ color: "#F5C518", fontSize: 14, fontWeight: "700", marginTop: 6 }}>
+                  ★ {event.averageRating.toFixed(2)}
+                </Text>
+              )}
+            </View>
+            <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+              <Text style={{ color: "#6B7280", fontSize: 11 }}>poisonrana.com</Text>
+            </View>
+          </View>
+        </View>
+      </ViewShot>
 
       {/* Watchlist toast */}
       {toast && (

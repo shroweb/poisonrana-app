@@ -188,6 +188,22 @@ export default function EventsScreen() {
 
   async function handlePollVote(optionId: string) {
     if (!activePoll) return;
+    // Optimistic update
+    const isToggleOff = activePoll.userVote === optionId;
+    setActivePoll((p) => {
+      if (!p) return p;
+      const delta = isToggleOff ? -1 : 1;
+      return {
+        ...p,
+        userVote: isToggleOff ? null : optionId,
+        totalVotes: p.totalVotes + delta,
+        options: p.options.map((o) =>
+          o.id === optionId ? { ...o, votes: o.votes + delta } :
+          (!isToggleOff && o.id === p.userVote) ? { ...o, votes: o.votes - 1 } :
+          o
+        ),
+      };
+    });
     try {
       const res = await api.post<{ data: { userVote: string | null; totalVotes: number; options: Poll["options"] } }>(
         `/polls/${activePoll.id}/vote`,
@@ -196,7 +212,23 @@ export default function EventsScreen() {
       if (res.data) {
         setActivePoll((p) => p ? { ...p, userVote: res.data.userVote, totalVotes: res.data.totalVotes, options: res.data.options } : p);
       }
-    } catch {}
+    } catch {
+      // Revert optimistic update on failure
+      setActivePoll((p) => {
+        if (!p) return p;
+        const delta = isToggleOff ? 1 : -1;
+        return {
+          ...p,
+          userVote: isToggleOff ? optionId : activePoll.userVote,
+          totalVotes: p.totalVotes + delta,
+          options: p.options.map((o) =>
+            o.id === optionId ? { ...o, votes: o.votes + delta } :
+            (!isToggleOff && o.id === activePoll.userVote) ? { ...o, votes: o.votes + 1 } :
+            o
+          ),
+        };
+      });
+    }
   }
   const [view, setView] = useState<"upcoming" | "past">("past");
   const [page, setPage] = useState(1);

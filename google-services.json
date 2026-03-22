@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "627922309711",
+    "project_id": "poison-rana-a977a",
+    "storage_bucket": "poison-rana-a977a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:627922309711:android:87d808acf18a95794cd03a",
+        "android_client_info": {
+          "package_name": "com.poisonrana.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCZag9cDM_jFMf2eKDqAYUygoUCwXrdOds"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
