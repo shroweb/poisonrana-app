@@ -17,6 +17,7 @@
       "bundleIdentifier": "com.poisonrana.app"
     },
     "android": {
+      "abiFilters": ["arm64-v8a", "x86_64"],
       "adaptiveIcon": {
         "backgroundColor": "#0B1120",
         "foregroundImage": "./assets/android-icon-foreground.png",
